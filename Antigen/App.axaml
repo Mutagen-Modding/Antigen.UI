@@ -16,7 +16,6 @@
             </ResourceDictionary.MergedDictionaries>
 
             <converter:BoolToDoubleConverter x:Key="BoolToDoubleConverter" />
-            <converter:FormattedTopicConverterWrapper x:Key="FormattedTopicConverter" />
 
             <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#664A90C2" />
         </ResourceDictionary>

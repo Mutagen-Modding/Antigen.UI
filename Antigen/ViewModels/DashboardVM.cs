@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Reactive;
 using System.Reactive.Linq;
 using Antigen.Extensions;
+using Antigen.Controls;
 using Antigen.Models;
 using Antigen.Resources.Command;
 using Antigen.Resources.Constants;
@@ -25,7 +26,6 @@ namespace Antigen.ViewModels;
 public sealed partial class DashboardVM : ResizablePanelVM, ITransient
 {
     private readonly NavigationController _navigation;
-    private readonly IFormattedTopicConverters _formattedTopicConverters;
 
     public override double MinResizeHeight => 300.0;
     public override double MaxResizeHeight => 1400.0;
@@ -52,12 +52,10 @@ public sealed partial class DashboardVM : ResizablePanelVM, ITransient
     public DashboardVM(
         NavigationController navigation,
         AnalyzerVM analyzerVM,
-        IFormattedTopicConverters formattedTopicConverters,
         ILogger<DashboardVM> logger)
     {
         _navigation = navigation;
         AnalyzerVM = analyzerVM;
-        _formattedTopicConverters = formattedTopicConverters;
         IsExpanded = true;
 
         ActiveGroupings.ObserveCollectionChanges()
@@ -217,9 +215,9 @@ public sealed partial class DashboardVM : ResizablePanelVM, ITransient
         return vm.RecordDisplayName;
     }
 
-    private Control? GetMessageText(AnalyzerResultVM vm)
+    private static Control GetMessageText(AnalyzerResultVM vm)
     {
-        return _formattedTopicConverters.ExtractMessage.Convert(vm.Result.Topic.FormattedTopic) as Control;
+        return new FormattedTopicBlock { Segments = vm.MessageSegments };
     }
 
     private Control GetTopicControl(AnalyzerResultVM vm)

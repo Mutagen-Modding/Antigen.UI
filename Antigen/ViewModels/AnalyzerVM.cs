@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.Reactive;
 using System.Reactive.Linq;
+using Antigen.Models.Analyzer;
+using Antigen.Models.Settings;
 using Antigen.Services;
 using Antigen.ViewModels.Analyzer;
 using DynamicData;
@@ -21,6 +23,7 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
     private readonly HomeVM _homeVM;
     private readonly Func<AnalyzerVM, SettingsVM> _settingsVMFactory;
     private readonly Func<AnalyzerVM, DashboardVM> _dashboardVMFactory;
+    private readonly AnalyzerResultVM.Factory _resultVMFactory;
 
     private SettingsVM? _settingsVM;
     private DashboardVM? _dashboardVM;
@@ -39,7 +42,8 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
         Func<AnalyzerVM, SettingsVM> settingsVMFactory,
         ISettingsService settingsService,
         ModWatcherVM modWatcher,
-        Func<AnalyzerVM, DashboardVM> dashboardVMFactory)
+        Func<AnalyzerVM, DashboardVM> dashboardVMFactory,
+        AnalyzerResultVM.Factory resultVMFactory)
     {
         _navigation = navigation;
         _homeVM = homeVM;
@@ -47,6 +51,7 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
         SettingsService = settingsService;
         ModWatcher = modWatcher;
         _dashboardVMFactory = dashboardVMFactory;
+        _resultVMFactory = resultVMFactory;
         IsExpanded = true;
 
         // Transform to vms and apply filters
@@ -54,7 +59,7 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
             .ToObservableChangeSet()
             .Transform(info =>
             {
-                var vm = new AnalyzerResultVM(info, ModWatcher.IgnoreResult);
+                var vm = _resultVMFactory(info, ModWatcher.IgnoreResult);
 
                 // Only one row's ignore overlay is open at a time; close the previous one
                 vm.ConfigureRequested

@@ -1,4 +1,3 @@
-using Antigen.Resources.Converter;
 using Antigen.Services.Game;
 using Autofac;
 using Mutagen.Bethesda.Analyzers.Skyrim;
@@ -7,8 +6,8 @@ namespace Antigen.Modules;
 
 public sealed class SkyrimModule : GameCategoryModule
 {
-    protected override void RegisterFormattedTopicConverters(ContainerBuilder builder) =>
-        builder.RegisterType<SkyrimFormattedTopicConverters>().As<IFormattedTopicConverters>();
+    protected override void RegisterFormattedTopicFormatter(ContainerBuilder builder) =>
+        builder.RegisterType<SkyrimFormattedTopicFormatter>().As<IFormattedTopicFormatter>();
 
     protected override void RegisterAnalyzerResultInfoFactory(ContainerBuilder builder) =>
         builder.RegisterType<SkyrimAnalyzerResultInfoFactory>().As<IAnalyzerResultInfoFactory>();

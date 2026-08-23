@@ -1,8 +1,8 @@
 using Mutagen.Bethesda.Skyrim;
 
-namespace Antigen.Resources.Converter;
+namespace Antigen.Services.Game;
 
-public sealed class SkyrimFormattedTopicConverters : FormattedTopicConverters
+public sealed class SkyrimFormattedTopicFormatter : FormattedTopicFormatter
 {
     protected override object? Describe(object? item) => item switch
     {

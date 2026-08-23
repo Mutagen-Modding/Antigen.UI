@@ -1,4 +1,3 @@
-using Antigen.Resources.Converter;
 using Antigen.Services.Game;
 using Autofac;
 using Module = Autofac.Module;
@@ -11,14 +10,14 @@ public abstract class GameCategoryModule : Module
     {
         base.Load(builder);
 
-        RegisterFormattedTopicConverters(builder);
+        RegisterFormattedTopicFormatter(builder);
         RegisterAnalyzerResultInfoFactory(builder);
         RegisterAnalyzerFilter(builder);
         RegisterAnalyzers(builder);
     }
 
-    protected virtual void RegisterFormattedTopicConverters(ContainerBuilder builder) =>
-        builder.RegisterType<FormattedTopicConverters>().As<IFormattedTopicConverters>();
+    protected virtual void RegisterFormattedTopicFormatter(ContainerBuilder builder) =>
+        builder.RegisterType<FormattedTopicFormatter>().As<IFormattedTopicFormatter>();
 
     protected virtual void RegisterAnalyzerResultInfoFactory(ContainerBuilder builder) =>
         builder.RegisterType<AnalyzerResultInfoFactory>().As<IAnalyzerResultInfoFactory>();
