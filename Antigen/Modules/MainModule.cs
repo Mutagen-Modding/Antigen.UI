@@ -1,10 +1,11 @@
 using System.IO.Abstractions;
 using System.Reflection;
+using Antigen.Services;
 using Autofac;
 using Avalonia.Controls;
-using Mutagen.Bethesda;
 using Mutagen.Bethesda.Autofac;
 using Mutagen.Bethesda.Environments.DI;
+using Mutagen.Bethesda.Installs.DI;
 using Mutagen.Bethesda.Plugins.Meta;
 using Noggog.Reactive;
 using Noggog.UI;
@@ -37,11 +38,15 @@ public class MainModule : Module
 
         builder.RegisterModule<MutagenModule>();
 
-        builder.RegisterInstance(new GameReleaseInjection(GameRelease.SkyrimSE))
-            .SingleInstance()
-            .AsImplementedInterfaces();
+        // Register as singletons here, so each profile doesnt redo the work
+        builder.RegisterType<GameLocatorLookupCache>()
+            .As<IGameDirectoryLookup>()
+            .As<IDataDirectoryLookup>()
+            .SingleInstance();
 
-        builder.RegisterModule<SkyrimModule>();
+        builder.RegisterType<CachedProtonPrefixProvider>()
+            .As<IProtonPrefixProvider>()
+            .SingleInstance();
 
         builder.Register(context =>
         {
@@ -64,5 +69,17 @@ public class MainModule : Module
             .AssignableTo<ITransient>()
             .AsSelf()
             .AsImplementedInterfaces();
+
+        builder.RegisterAssemblyTypes(assembly)
+            .AssignableTo<IProfileScoped>()
+            .AsSelf()
+            .AsImplementedInterfaces()
+            .InstancePerMatchingLifetimeScope(LifetimeScopes.Profile);
+
+        builder.RegisterAssemblyTypes(assembly)
+            .AssignableTo<IActiveScoped>()
+            .AsSelf()
+            .AsImplementedInterfaces()
+            .InstancePerMatchingLifetimeScope(LifetimeScopes.Active);
     }
 }

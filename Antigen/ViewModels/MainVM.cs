@@ -1,9 +1,10 @@
 using System.Reactive.Linq;
 using Antigen.Services;
+using Antigen.ViewModels.Profiles;
 using Antigen.Views;
 using Avalonia.Controls;
-using Mutagen.Bethesda.Environments.DI;
 using Noggog;
+using Noggog.UI;
 using ReactiveUI;
 using ReactiveUI.SourceGenerators;
 
@@ -11,8 +12,10 @@ namespace Antigen.ViewModels;
 
 public sealed partial class MainVM : ViewModel, ISingleton
 {
-    private readonly GlobalSettingsVM _globalSettings;
     private readonly NavigationController _navigation;
+    private readonly ActiveProfileController _activeProfile;
+    private readonly GlobalSettingsVM _globalSettings;
+    private readonly ProfilesVM _profiles;
     private readonly IMainWindow _mainWindow;
 
     private ResizablePanelVM? _sizedPanel;
@@ -24,63 +27,77 @@ public sealed partial class MainVM : ViewModel, ISingleton
     [Reactive] public partial bool AnchoredToBottom { get; set; }
 
     public string Version { get; }
-    public string ProfileName { get; }
-    public SessionVM Session { get; }
 
     public double ExpandedHeight => ActivePanel?.ExpandedHeight ?? _expandedHeight;
     public double ExpandedWidth => ActivePanel?.ExpandedWidth ?? _expandedWidth;
+
+    [ObservableAsProperty(PropertyName = "ProfileName", InitialValue = "\"Profiles\"")]
+    private IObservable<string> ProfileNameObservable() =>
+        _activeProfile.WhenAnyValue(x => x.Active)
+            .Select(active => active?.Profile.DisplayName ?? "Profiles");
 
     [ObservableAsProperty(PropertyName = "ActivePanel")]
     private IObservable<ResizablePanelVM?> ActivePanelObservable() =>
         _navigation.WhenAnyValue(x => x.Active);
 
-    [ObservableAsProperty(PropertyName = "IsExpanded", InitialValue = "true")]
+    [ObservableAsProperty(PropertyName = "IsExpanded")]
     private IObservable<bool> IsExpandedObservable() =>
         _navigation.WhenAnyValue(x => x.Active)
             .Select(panel => panel?.WhenAnyValue(x => x.IsExpanded) ?? Observable.Return(false))
-            .Switch();
+            .Switch()
+            .StartWith(true);
 
-    [ObservableAsProperty(PropertyName = "ShowPeek", InitialValue = "false")]
+    [ObservableAsProperty(PropertyName = "ShowPeek")]
     private IObservable<bool> ShowPeekObservable() =>
         _navigation.WhenAnyValue(x => x.Active)
             .Select(panel => panel?.WhenAnyValue(x => x.IsExpanded, x => x.IsPeeking, (expanded, peeking) => !expanded && peeking)
                 ?? Observable.Return(false))
-            .Switch();
+            .Switch()
+            .StartWith(false);
 
-    [ObservableAsProperty(PropertyName = "ShowStatusBar", InitialValue = "false")]
+    [ObservableAsProperty(PropertyName = "Session")]
+    private IObservable<SessionVM?> SessionObservable() =>
+        _activeProfile.WhenAnyFallback(x => x.Active!.Session);
+
+    [ObservableAsProperty(PropertyName = "ShowStatusBar")]
     private IObservable<bool> ShowStatusBarObservable() =>
-        Session.WhenAnyValue(x => x.CurrentWatcher).Select(watcher => watcher is not null);
+        this.WhenAnyValue(x => x.Session)
+            .Select(session => session is not null)
+            .StartWith(false);
 
-    [ObservableAsProperty(PropertyName = "StatusBarDock", InitialValue = "global::Avalonia.Controls.Dock.Bottom")]
+    [ObservableAsProperty(PropertyName = "StatusBarDock")]
     private IObservable<Dock> StatusBarDockObservable() =>
         this.WhenAnyValue(x => x.ShowPeek, x => x.AnchoredToBottom,
-            (peeking, bottom) => peeking && !bottom ? Dock.Top : Dock.Bottom);
+            (peeking, bottom) => peeking && !bottom ? Dock.Top : Dock.Bottom)
+            .StartWith(Dock.Bottom);
 
-    [ObservableAsProperty(PropertyName = "PeekArrowDown", InitialValue = "true")]
+    [ObservableAsProperty(PropertyName = "PeekArrowDown")]
     private IObservable<bool> PeekArrowDownObservable() =>
-        this.WhenAnyValue(x => x.ShowPeek, x => x.AnchoredToBottom, (peeking, bottom) => peeking == bottom);
+        this.WhenAnyValue(x => x.ShowPeek, x => x.AnchoredToBottom, (peeking, bottom) => peeking == bottom)
+            .StartWith(true);
 
-    [ObservableAsProperty(PropertyName = "ShowStatusDivider", InitialValue = "false")]
+    [ObservableAsProperty(PropertyName = "ShowStatusDivider")]
     private IObservable<bool> ShowStatusDividerObservable() =>
         this.WhenAnyValue(x => x.IsExpanded, x => x.ShowPeek, x => x.ShowStatusBar,
-            (expanded, peeking, status) => (expanded || peeking) && status);
+            (expanded, peeking, status) => (expanded || peeking) && status)
+            .StartWith(false);
 
     public MainVM(
         GuiSettingsService guiSettings,
         GlobalSettingsVM globalSettings,
+        ProfilesVM profiles,
         NavigationController navigation,
-        SessionVM session,
+        ActiveProfileController activeProfile,
         VersionProvider versionProvider,
-        IMainWindow mainWindow,
-        IGameReleaseContext gameReleaseContext)
+        IMainWindow mainWindow)
     {
-        _globalSettings = globalSettings;
         _navigation = navigation;
+        _activeProfile = activeProfile;
+        _globalSettings = globalSettings;
+        _profiles = profiles;
         _mainWindow = mainWindow;
-        Session = session;
 
         Version = $"v{versionProvider.Current}";
-        ProfileName = gameReleaseContext.Release.ToString();
 
         var saved = guiSettings.Current;
         WindowX = saved.WindowX ?? 0;
@@ -98,13 +115,13 @@ public sealed partial class MainVM : ViewModel, ISingleton
     [ReactiveCommand]
     private void OpenSettings()
     {
-        _navigation.Push(_globalSettings);
+        _navigation.Open(_globalSettings);
     }
 
-    // Profiles aren't implemented yet.
     [ReactiveCommand]
     private void OpenProfile()
     {
+        _navigation.Open(_profiles);
     }
 
     [ReactiveCommand]

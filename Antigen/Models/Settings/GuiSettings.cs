@@ -8,4 +8,5 @@ public sealed record GuiSettings
     public double ExpandedWidth { get; init; } = 1050;
     public double WorkerThreadPercentage { get; init; } = 0.5;
     public ColorScheme ColorScheme { get; init; } = ColorScheme.Antigen;
+    public string? ActiveProfileId { get; init; }
 }

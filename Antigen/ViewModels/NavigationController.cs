@@ -1,3 +1,6 @@
+using System.Reactive.Linq;
+using Antigen.Services;
+using Antigen.ViewModels.Profiles;
 using ReactiveUI;
 using ReactiveUI.SourceGenerators;
 
@@ -5,45 +8,62 @@ namespace Antigen.ViewModels;
 
 public sealed partial class NavigationController : ReactiveObject, ISingleton
 {
-    private readonly HomeVM _home;
-
-    private readonly List<ResizablePanelVM> _history = [];
+    private readonly ActiveProfileController _activeProfile;
+    private readonly Lazy<WelcomeVM> _welcome;
 
     [Reactive] public partial ResizablePanelVM? Active { get; private set; }
 
-    public NavigationController(HomeVM home)
+    private ResizablePanelVM? _last;
+
+    public NavigationController(ActiveProfileController activeProfile, Lazy<WelcomeVM> welcome)
     {
-        _home = home;
-        Active = home;
+        _activeProfile = activeProfile;
+        _welcome = welcome;
+
+        _activeProfile.WhenAnyValue(x => x.Active)
+            .Skip(1)
+            .Subscribe(_ => ProfileSwitched());
+    }
+
+    public void GoHome()
+    {
+        GoTo(Fallback);
     }
 
     public void GoTo(ResizablePanelVM panel)
     {
-        _history.Clear();
+        _last = null;
         Active = panel;
     }
 
-    public void Push(ResizablePanelVM panel)
+    public void Open(ResizablePanelVM panel)
     {
         if (Active == panel) return;
 
-        if (Active is { } leaving)
-        {
-            _history.Add(leaving);
-        }
+        _last = Active;
         Active = panel;
     }
 
     public void Back()
     {
-        if (_history.Count == 0)
+        Active = _last ?? Fallback;
+        _last = null;
+    }
+
+    private void ProfileSwitched()
+    {
+        if (BelongsToProfile(_last))
         {
-            Active = _home;
-            return;
+            _last = null;
         }
 
-        var index = _history.Count - 1;
-        Active = _history[index];
-        _history.RemoveAt(index);
+        if (Active is LoadingVM || BelongsToProfile(Active))
+        {
+            GoHome();
+        }
     }
+
+    private static bool BelongsToProfile(ResizablePanelVM? panel) => panel is not (null or ISingleton);
+
+    private ResizablePanelVM Fallback => _activeProfile.Active?.Home ?? (ResizablePanelVM)_welcome.Value;
 }

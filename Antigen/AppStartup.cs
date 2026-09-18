@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
+using Antigen.Models.Settings;
 using Antigen.Services;
 using Antigen.ViewModels;
+using Antigen.ViewModels.Profiles;
 using Avalonia;
 using Avalonia.Controls;
 using Microsoft.Extensions.Logging;
@@ -11,6 +13,10 @@ namespace Antigen;
 public sealed class AppStartup(
     Window window,
     MainVM main,
+    NavigationController navigation,
+    ProfilesVM profiles,
+    WelcomeVM welcome,
+    LoadingVM loading,
     GuiSettingsService guiSettings,
     ShutdownService shutdown,
     ILogger<AppStartup> logger) : ISingleton
@@ -23,9 +29,21 @@ public sealed class AppStartup(
             RuntimeInformation.OSDescription,
             Environment.ProcessorCount);
 
+        var saved = guiSettings.Current;
+
+        if (profiles.Profiles.Count == 0)
+        {
+            navigation.GoTo(welcome);
+        }
+        else
+        {
+            navigation.GoTo(loading);
+            profiles.Activate(saved.ActiveProfileId);
+        }
+
         window.DataContext = main;
 
-        RestorePosition();
+        RestorePosition(saved);
     }
 
     public void Shutdown()
@@ -33,11 +51,10 @@ public sealed class AppStartup(
         shutdown.Save();
     }
 
-    private void RestorePosition()
+    private void RestorePosition(GuiSettings saved)
     {
-        var saved = guiSettings.Current;
         if (saved.WindowX is { } x && saved.WindowY is { } y
-            && window.Screens.All.Any(s => s.Bounds.Contains(new PixelPoint(x, y))))
+                                   && window.Screens.All.Any(s => s.Bounds.Contains(new PixelPoint(x, y))))
         {
             window.Position = new PixelPoint(x, y);
             return;

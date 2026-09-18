@@ -33,7 +33,7 @@ public sealed class AnalyzerService(
     IGameReleaseContext gameReleaseContext,
     IAnalyzerFilter analyzerFilter,
     IAnalyzerResultInfoFactory infoFactory,
-    ILogger<AnalyzerService> logger) : IAnalyzerService, ISingleton
+    ILogger<AnalyzerService> logger) : IAnalyzerService, IActiveScoped
 {
     private readonly Subject<StatusUpdate> _statusSubject = new();
 
