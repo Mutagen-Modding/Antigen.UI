@@ -17,7 +17,7 @@ using ReactiveUI.SourceGenerators;
 
 namespace Antigen.ViewModels.Profiles;
 
-public sealed partial class ProfileVM : ViewModel, IProfileScoped, IDataDirectoryProvider
+public sealed partial class ProfileVM : ViewModel, IProfileScoped, IDataDirectoryProvider, IGameReleaseContext
 {
     private readonly ILifetimeScope _scope;
     private readonly ActiveProfileController _activeProfile;
@@ -118,7 +118,8 @@ public sealed partial class ProfileVM : ViewModel, IProfileScoped, IDataDirector
             .DisposeWith(this);
     }
 
-    public ILifetimeScope BeginActive() => _scope.BeginLifetimeScope(LifetimeScopes.Active);
+    public ILifetimeScope BeginActive() =>
+        _scope.BeginLifetimeScope(LifetimeScopes.Active, builder => builder.RegisterModule(GameSupport.ModuleFor(Release)));
 
     private readonly record struct LoadOrderSource(
         DirectoryPath Folder,
