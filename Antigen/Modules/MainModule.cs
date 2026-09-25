@@ -1,10 +1,14 @@
 using System.IO.Abstractions;
 using System.Reflection;
+using Antigen.Services;
 using Autofac;
-using Mutagen.Bethesda.Analyzers.Skyrim;
+using Avalonia.Controls;
 using Mutagen.Bethesda.Autofac;
 using Mutagen.Bethesda.Environments.DI;
+using Mutagen.Bethesda.Installs.DI;
 using Mutagen.Bethesda.Plugins.Meta;
+using Noggog.Reactive;
+using Noggog.UI;
 using Module = Autofac.Module;
 
 namespace Antigen.Modules;
@@ -20,11 +24,29 @@ public class MainModule : Module
             .As<IFileSystem>()
             .SingleInstance();
 
+        builder.RegisterType<SchedulerProvider>()
+            .As<ISchedulerProvider>()
+            .SingleInstance();
+
+        builder.Register(context =>
+            {
+                var window = context.Resolve<Window>();
+                return new AvaloniaPathPickerDialogProvider(() => window);
+            })
+            .As<IPathPickerDialogProvider>()
+            .SingleInstance();
+
         builder.RegisterModule<MutagenModule>();
 
-        builder.RegisterModule<SkyrimModule>();
+        // Register as singletons here, so each profile doesnt redo the work
+        builder.RegisterType<GameLocatorLookupCache>()
+            .As<IGameDirectoryLookup>()
+            .As<IDataDirectoryLookup>()
+            .SingleInstance();
 
-        builder.RegisterModule<SkyrimAnalyzerModule>();
+        builder.RegisterType<CachedProtonPrefixProvider>()
+            .As<IProtonPrefixProvider>()
+            .SingleInstance();
 
         builder.Register(context =>
         {
@@ -47,5 +69,17 @@ public class MainModule : Module
             .AssignableTo<ITransient>()
             .AsSelf()
             .AsImplementedInterfaces();
+
+        builder.RegisterAssemblyTypes(assembly)
+            .AssignableTo<IProfileScoped>()
+            .AsSelf()
+            .AsImplementedInterfaces()
+            .InstancePerMatchingLifetimeScope(LifetimeScopes.Profile);
+
+        builder.RegisterAssemblyTypes(assembly)
+            .AssignableTo<IActiveScoped>()
+            .AsSelf()
+            .AsImplementedInterfaces()
+            .InstancePerMatchingLifetimeScope(LifetimeScopes.Active);
     }
 }

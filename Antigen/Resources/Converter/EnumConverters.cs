@@ -1,4 +1,5 @@
 using Avalonia.Data.Converters;
+using Noggog;
 
 namespace Antigen.Resources.Converter;
 
@@ -6,6 +7,9 @@ public static class EnumConverters
 {
     public new static readonly FuncValueConverter<Enum, string> ToString
         = new(e => e?.ToString() ?? string.Empty);
+
+    public static readonly FuncValueConverter<Enum, string> ToDescription
+        = new(e => e?.ToDescriptionString() ?? string.Empty);
 
     public static readonly FuncValueConverter<Enum, string> ToStringWithSpaces
         = new(e => e is null

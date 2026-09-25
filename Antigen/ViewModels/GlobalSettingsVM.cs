@@ -10,8 +10,6 @@ namespace Antigen.ViewModels;
 
 public sealed partial class GlobalSettingsVM : ResizablePanelVM, INumWorkThreadsController, ISingleton
 {
-    public const double DefaultPercentage = 0.5;
-
     public override double MinResizeHeight => 150.0;
 
     [Reactive] public partial double CorePercentage { get; set; }
@@ -20,8 +18,6 @@ public sealed partial class GlobalSettingsVM : ResizablePanelVM, INumWorkThreads
 
     public static ColorScheme[] ColorSchemes { get; } = Enum.GetValues<ColorScheme>();
 
-    public ResizablePanelVM? ReturnTo { get; set; }
-
     [ObservableAsProperty]
     private IObservable<int> WorkerThreads() =>
         this.WhenAnyValue(x => x.CorePercentage).Select(ToThreadCount);
@@ -29,22 +25,19 @@ public sealed partial class GlobalSettingsVM : ResizablePanelVM, INumWorkThreads
     public IObservable<int?> NumDesiredThreads =>
         this.WhenAnyValue(x => x.CorePercentage).Select(p => (int?)ToThreadCount(p));
 
-    private readonly ActiveVmController _activeVm;
-    private readonly HomeVM _homeVM;
+    private readonly NavigationController _navigation;
 
     public GlobalSettingsVM(
-        ActiveVmController activeVm,
-        HomeVM homeVM,
+        NavigationController navigation,
         GuiSettingsService guiSettings,
         ColorSchemeService colorSchemes)
     {
-        _activeVm = activeVm;
-        _homeVM = homeVM;
+        _navigation = navigation;
         IsExpanded = true;
 
-        var saved = guiSettings.Load();
-        CorePercentage = Math.Clamp(saved?.WorkerThreadPercentage ?? DefaultPercentage, 0, 1);
-        ColorScheme = saved?.ColorScheme ?? ColorSchemeService.Default;
+        var saved = guiSettings.Current;
+        CorePercentage = Math.Clamp(saved.WorkerThreadPercentage, 0, 1);
+        ColorScheme = saved.ColorScheme;
 
         InitializeOAPH();
 
@@ -56,7 +49,7 @@ public sealed partial class GlobalSettingsVM : ResizablePanelVM, INumWorkThreads
     [ReactiveCommand]
     private void Back()
     {
-        _activeVm.Active = ReturnTo ?? _homeVM;
+        _navigation.Back();
     }
 
     private static int ToThreadCount(double percentage) =>

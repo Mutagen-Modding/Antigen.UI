@@ -6,6 +6,7 @@
              xmlns:analyzer="clr-namespace:Antigen.ViewModels.Analyzer"
              xmlns:converter="clr-namespace:Antigen.Resources.Converter"
              xmlns:commands="clr-namespace:Antigen.Resources.Command"
+             xmlns:antigenControls="clr-namespace:Antigen.Controls"
              mc:Ignorable="d"
              d:DesignWidth="600"
              d:DesignHeight="300"
@@ -150,8 +151,8 @@
                                VerticalAlignment="Center" />
 
                     <!-- Message -->
-                    <ContentControl Grid.Column="2"
-                                    Content="{Binding Result.Topic.FormattedTopic, Converter={StaticResource FormattedTopicConverter}}" />
+                    <antigenControls:FormattedTopicBlock Grid.Column="2"
+                                                        Segments="{Binding MessageSegments}" />
 
                     <!-- Parent -->
                     <Button Grid.Column="3"

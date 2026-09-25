@@ -1,14 +1,10 @@
-using System.Reactive.Disposables;
 using System.Reactive.Linq;
-using Antigen.Models.Settings;
 using Antigen.Services;
+using Antigen.ViewModels.Profiles;
 using Antigen.Views;
 using Avalonia.Controls;
-using Microsoft.Extensions.Logging;
-using Mutagen.Bethesda.Analyzers.SDK.Topics;
-using Mutagen.Bethesda.Environments.DI;
-using Mutagen.Bethesda.Plugins;
 using Noggog;
+using Noggog.UI;
 using ReactiveUI;
 using ReactiveUI.SourceGenerators;
 
@@ -16,138 +12,116 @@ namespace Antigen.ViewModels;
 
 public sealed partial class MainVM : ViewModel, ISingleton
 {
-    private readonly Func<ModKey, ModWatcherVM> _modWatcherVMFactory;
-    private readonly Func<ModWatcherVM, AnalyzerVM> _analyzerVMFactory;
-    private readonly GuiSettingsService _guiSettings;
+    private readonly NavigationController _navigation;
+    private readonly ActiveProfileController _activeProfile;
     private readonly GlobalSettingsVM _globalSettings;
-    private readonly ActiveVmController _activeVm;
+    private readonly ProfilesVM _profiles;
     private readonly IMainWindow _mainWindow;
-    private readonly ILogger<MainVM> _logger;
 
     private ResizablePanelVM? _sizedPanel;
     private double _expandedHeight;
     private double _expandedWidth;
 
-    public static Severity[] SeverityValues { get; } = Enum.GetValues<Severity>();
-
-    [Reactive] public partial ModWatcherVM? CurrentWatcher { get; set; }
-    [Reactive] public partial AnalyzerVM? CurrentAnalyzer { get; set; }
     [Reactive] public partial int WindowX { get; set; }
     [Reactive] public partial int WindowY { get; set; }
     [Reactive] public partial bool AnchoredToBottom { get; set; }
 
     public string Version { get; }
-    public string ProfileName { get; }
-    public GuiSettings? SavedSettings { get; }
+
+    public double ExpandedHeight => ActivePanel?.ExpandedHeight ?? _expandedHeight;
+    public double ExpandedWidth => ActivePanel?.ExpandedWidth ?? _expandedWidth;
+
+    [ObservableAsProperty(PropertyName = "ProfileName", InitialValue = "\"Profiles\"")]
+    private IObservable<string> ProfileNameObservable() =>
+        _activeProfile.WhenAnyValue(x => x.Active)
+            .Select(active => active?.Profile.DisplayName ?? "Profiles");
 
     [ObservableAsProperty(PropertyName = "ActivePanel")]
     private IObservable<ResizablePanelVM?> ActivePanelObservable() =>
-        _activeVm.WhenAnyValue(x => x.Active);
+        _navigation.WhenAnyValue(x => x.Active);
 
-    [ObservableAsProperty(PropertyName = "IsExpanded", InitialValue = "true")]
+    [ObservableAsProperty(PropertyName = "IsExpanded")]
     private IObservable<bool> IsExpandedObservable() =>
-        _activeVm.WhenAnyValue(x => x.Active)
+        _navigation.WhenAnyValue(x => x.Active)
             .Select(panel => panel?.WhenAnyValue(x => x.IsExpanded) ?? Observable.Return(false))
-            .Switch();
+            .Switch()
+            .StartWith(true);
 
-    [ObservableAsProperty(PropertyName = "ShowPeek", InitialValue = "false")]
+    [ObservableAsProperty(PropertyName = "ShowPeek")]
     private IObservable<bool> ShowPeekObservable() =>
-        _activeVm.WhenAnyValue(x => x.Active)
+        _navigation.WhenAnyValue(x => x.Active)
             .Select(panel => panel?.WhenAnyValue(x => x.IsExpanded, x => x.IsPeeking, (expanded, peeking) => !expanded && peeking)
                 ?? Observable.Return(false))
-            .Switch();
+            .Switch()
+            .StartWith(false);
 
-    [ObservableAsProperty(PropertyName = "ShowStatusBar", InitialValue = "false")]
+    [ObservableAsProperty(PropertyName = "Session")]
+    private IObservable<SessionVM?> SessionObservable() =>
+        _activeProfile.WhenAnyFallback(x => x.Active!.Session);
+
+    [ObservableAsProperty(PropertyName = "ShowStatusBar")]
     private IObservable<bool> ShowStatusBarObservable() =>
-        this.WhenAnyValue(x => x.CurrentWatcher).Select(watcher => watcher is not null);
+        this.WhenAnyValue(x => x.Session)
+            .Select(session => session is not null)
+            .StartWith(false);
 
-    [ObservableAsProperty(PropertyName = "StatusBarDock", InitialValue = "global::Avalonia.Controls.Dock.Bottom")]
+    [ObservableAsProperty(PropertyName = "StatusBarDock")]
     private IObservable<Dock> StatusBarDockObservable() =>
         this.WhenAnyValue(x => x.ShowPeek, x => x.AnchoredToBottom,
-            (peeking, bottom) => peeking && !bottom ? Dock.Top : Dock.Bottom);
+            (peeking, bottom) => peeking && !bottom ? Dock.Top : Dock.Bottom)
+            .StartWith(Dock.Bottom);
 
-    [ObservableAsProperty(PropertyName = "PeekArrowDown", InitialValue = "true")]
+    [ObservableAsProperty(PropertyName = "PeekArrowDown")]
     private IObservable<bool> PeekArrowDownObservable() =>
-        this.WhenAnyValue(x => x.ShowPeek, x => x.AnchoredToBottom, (peeking, bottom) => peeking == bottom);
+        this.WhenAnyValue(x => x.ShowPeek, x => x.AnchoredToBottom, (peeking, bottom) => peeking == bottom)
+            .StartWith(true);
 
-    [ObservableAsProperty(PropertyName = "ShowStatusDivider", InitialValue = "false")]
+    [ObservableAsProperty(PropertyName = "ShowStatusDivider")]
     private IObservable<bool> ShowStatusDividerObservable() =>
         this.WhenAnyValue(x => x.IsExpanded, x => x.ShowPeek, x => x.ShowStatusBar,
-            (expanded, peeking, status) => (expanded || peeking) && status);
+            (expanded, peeking, status) => (expanded || peeking) && status)
+            .StartWith(false);
 
     public MainVM(
-        HomeVM homeVM,
         GuiSettingsService guiSettings,
         GlobalSettingsVM globalSettings,
-        ActiveVmController activeVm,
+        ProfilesVM profiles,
+        NavigationController navigation,
+        ActiveProfileController activeProfile,
         VersionProvider versionProvider,
-        IMainWindow mainWindow,
-        IGameReleaseContext gameReleaseContext,
-        Func<ModKey, ModWatcherVM> modWatcherVMFactory,
-        Func<ModWatcherVM, AnalyzerVM> analyzerVMFactory,
-        ILogger<MainVM> logger)
+        IMainWindow mainWindow)
     {
-        _guiSettings = guiSettings;
+        _navigation = navigation;
+        _activeProfile = activeProfile;
         _globalSettings = globalSettings;
-        _activeVm = activeVm;
+        _profiles = profiles;
         _mainWindow = mainWindow;
-        _logger = logger;
-        _modWatcherVMFactory = modWatcherVMFactory;
-        _analyzerVMFactory = analyzerVMFactory;
 
         Version = $"v{versionProvider.Current}";
-        ProfileName = gameReleaseContext.Release.ToString();
 
-        SavedSettings = guiSettings.Load();
-        if (SavedSettings is { } saved)
-        {
-            WindowX = saved.WindowX;
-            WindowY = saved.WindowY;
-        }
-        _expandedHeight = SavedSettings?.ExpandedHeight ?? homeVM.ExpandedHeight;
-        _expandedWidth = SavedSettings?.ExpandedWidth ?? homeVM.ExpandedWidth;
+        var saved = guiSettings.Current;
+        WindowX = saved.WindowX ?? 0;
+        WindowY = saved.WindowY ?? 0;
+        _expandedHeight = saved.ExpandedHeight;
+        _expandedWidth = saved.ExpandedWidth;
 
         InitializeOAPH();
 
-        _activeVm.WhenAnyValue(x => x.Active)
+        _navigation.WhenAnyValue(x => x.Active)
             .Subscribe(CarrySize)
             .DisposeWith(this);
-
-        _activeVm.Active = homeVM;
-
-        homeVM.StartRequested
-            .ObserveOn(RxSchedulers.MainThreadScheduler)
-            .Subscribe(StartWatching)
-            .DisposeWith(this);
-    }
-
-    public void Exit()
-    {
-        _logger.LogInformation("Exiting");
-
-        var settings = (_guiSettings.Load() ?? new GuiSettings()) with
-        {
-            WindowX = WindowX,
-            WindowY = WindowY,
-            ExpandedHeight = ActivePanel?.ExpandedHeight ?? _expandedHeight,
-            ExpandedWidth = ActivePanel?.ExpandedWidth ?? _expandedWidth,
-            WorkerThreadPercentage = _globalSettings.CorePercentage,
-            ColorScheme = _globalSettings.ColorScheme
-        };
-        _guiSettings.Save(settings);
     }
 
     [ReactiveCommand]
     private void OpenSettings()
     {
-        _globalSettings.ReturnTo = _activeVm.Active;
-        _activeVm.Active = _globalSettings;
+        _navigation.Open(_globalSettings);
     }
 
-    // Profiles aren't implemented yet.
     [ReactiveCommand]
     private void OpenProfile()
     {
+        _navigation.Open(_profiles);
     }
 
     [ReactiveCommand]
@@ -183,15 +157,6 @@ public sealed partial class MainVM : ViewModel, ISingleton
     private void Close()
     {
         _mainWindow.Close();
-    }
-
-    private void StartWatching(ModKey modKey)
-    {
-        CurrentWatcher?.Dispose();
-        CurrentWatcher = _modWatcherVMFactory(modKey);
-        CurrentAnalyzer = _analyzerVMFactory(CurrentWatcher);
-
-        _activeVm.Active = CurrentAnalyzer;
     }
 
     // Carry the resized height across panel switches so the window keeps its size.

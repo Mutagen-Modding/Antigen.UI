@@ -16,7 +16,6 @@
             </ResourceDictionary.MergedDictionaries>
 
             <converter:BoolToDoubleConverter x:Key="BoolToDoubleConverter" />
-            <converter:FormattedTopicConverterWrapper x:Key="FormattedTopicConverter" />
 
             <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#664A90C2" />
         </ResourceDictionary>
@@ -29,6 +28,7 @@
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="avares://Antigen/Resources/Styles/FlyoutStyles.axaml" />
+        <StyleInclude Source="avares://Antigen/Resources/Styles/PathPicker.axaml" />
         <StyleInclude Source="avares://Avalonia.Controls.TreeDataGrid/Themes/Fluent.axaml" />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
         <StyleInclude Source="avares://AvaloniaProgressRing/Styles/ProgressRing.xaml" />

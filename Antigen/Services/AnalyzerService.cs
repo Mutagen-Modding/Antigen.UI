@@ -27,13 +27,13 @@ public interface IAnalyzerService
 public sealed class AnalyzerService(
     IFileSystem fileSystem,
     IDataDirectoryProvider dataDirectoryProvider,
-    IModInfoProvider modInfoProvider,
+    ModInfoProvider modInfoProvider,
     IReadOnlyList<IAnalyzer> analyzers,
     ILoadOrderListingsProvider loadOrderListingsProvider,
     IGameReleaseContext gameReleaseContext,
     IAnalyzerFilter analyzerFilter,
     IAnalyzerResultInfoFactory infoFactory,
-    ILogger<AnalyzerService> logger) : IAnalyzerService, ISingleton
+    ILogger<AnalyzerService> logger) : IAnalyzerService, IActiveScoped
 {
     private readonly Subject<StatusUpdate> _statusSubject = new();
 

@@ -7,6 +7,8 @@
         xmlns:chrome="clr-namespace:Antigen.Views.Chrome"
         xmlns:analyzerViews="clr-namespace:Antigen.Views.Analyzer"
         xmlns:settingsViews="clr-namespace:Antigen.Views.Settings"
+        xmlns:profiles="clr-namespace:Antigen.ViewModels.Profiles"
+        xmlns:profileViews="clr-namespace:Antigen.Views.Profiles"
         mc:Ignorable="d"
         d:DesignWidth="1050"
         d:DesignHeight="696"
@@ -77,6 +79,15 @@
                             </DataTemplate>
                             <DataTemplate DataType="viewModels:SettingsVM">
                                 <settingsViews:SettingsView />
+                            </DataTemplate>
+                            <DataTemplate DataType="profiles:WelcomeVM">
+                                <profileViews:WelcomeView />
+                            </DataTemplate>
+                            <DataTemplate DataType="profiles:LoadingVM">
+                                <profileViews:LoadingView />
+                            </DataTemplate>
+                            <DataTemplate DataType="profiles:ProfilesVM">
+                                <profileViews:ProfilesView />
                             </DataTemplate>
                         </ContentControl.DataTemplates>
                     </ContentControl>
