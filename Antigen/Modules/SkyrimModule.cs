@@ -1,11 +1,14 @@
 using Antigen.Services.Game;
 using Autofac;
+using Mutagen.Bethesda;
 using Mutagen.Bethesda.Analyzers.Skyrim;
 
 namespace Antigen.Modules;
 
 public sealed class SkyrimModule : GameCategoryModule
 {
+    public override GameCategory Category => GameCategory.Skyrim;
+
     protected override void RegisterFormattedTopicFormatter(ContainerBuilder builder) =>
         builder.RegisterType<SkyrimFormattedTopicFormatter>().As<IFormattedTopicFormatter>();
 

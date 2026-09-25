@@ -1,11 +1,14 @@
 using Antigen.Services.Game;
 using Autofac;
+using Mutagen.Bethesda;
 using Module = Autofac.Module;
 
 namespace Antigen.Modules;
 
 public abstract class GameCategoryModule : Module
 {
+    public abstract GameCategory Category { get; }
+
     protected override void Load(ContainerBuilder builder)
     {
         base.Load(builder);
