@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.IO.Abstractions;
-using System.Reactive.Subjects;
-using System.Runtime.CompilerServices;
+using System.Reactive.Linq;
 using Antigen.Models.Analyzer;
 using Antigen.Services.Game;
 using Microsoft.Extensions.Logging;
@@ -14,14 +13,19 @@ using Mutagen.Bethesda.Environments.DI;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Order.DI;
 using Noggog;
+using ReactiveUI;
 
 namespace Antigen.Services;
 
+public abstract record AnalysisEvent
+{
+    public sealed record Status(StatusUpdate Update) : AnalysisEvent;
+    public sealed record Result(AnalyzerResultInfo Info) : AnalysisEvent;
+}
+
 public interface IAnalyzerService
 {
-    IObservable<StatusUpdate> StatusUpdates { get; }
-    Severity MinimumSeverity { get; set; }
-    IAsyncEnumerable<AnalyzerResultInfo> AnalyzeAsync(ModKey modKey, CancellationToken cancellationToken = default);
+    IObservable<AnalysisEvent> Analyze(ModKey modKey, Severity minimumSeverity);
 }
 
 public sealed class AnalyzerService(
@@ -35,17 +39,18 @@ public sealed class AnalyzerService(
     IAnalyzerResultInfoFactory infoFactory,
     ILogger<AnalyzerService> logger) : IAnalyzerService, IActiveScoped
 {
-    private readonly Subject<StatusUpdate> _statusSubject = new();
+    public IObservable<AnalysisEvent> Analyze(ModKey modKey, Severity minimumSeverity) =>
+        Observable.Create<AnalysisEvent>((observer, cancel) => Run(modKey, minimumSeverity, observer, cancel))
+            .SubscribeOn(RxSchedulers.TaskpoolScheduler);
 
-    public IObservable<StatusUpdate> StatusUpdates => _statusSubject;
-
-    public Severity MinimumSeverity { get; set; } = Severity.None;
-
-    public async IAsyncEnumerable<AnalyzerResultInfo> AnalyzeAsync(ModKey modKey, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    private async Task Run(ModKey modKey, Severity minimumSeverity, IObserver<AnalysisEvent> observer, CancellationToken cancel)
     {
+        void ReportStatus(AnalyzerStatus status, string message) =>
+            observer.OnNext(new AnalysisEvent.Status(new StatusUpdate(status, message)));
+
         IAsyncEnumerable<AnalyzerResult>? results = null;
 
-        logger.LogInformation("Starting analysis of {ModKey} with minimum severity {MinimumSeverity}", modKey, MinimumSeverity);
+        logger.LogInformation("Starting analysis of {ModKey} with minimum severity {MinimumSeverity}", modKey, minimumSeverity);
         var stopwatch = Stopwatch.StartNew();
 
         var modInfos = loadOrderListingsProvider.Get()
@@ -84,14 +89,14 @@ public sealed class AnalyzerService(
 
             if (env is null)
             {
-                ReportStatus(new StatusUpdate(AnalyzerStatus.Error, "Failed to create game environment"));
+                ReportStatus(AnalyzerStatus.Error, "Failed to create game environment");
                 logger.LogError("Giving up building the game environment for {ModKey} after {Attempts} attempts", modKey, retryCount);
-                yield break;
+                return;
             }
 
             try
             {
-                ReportStatus(new StatusUpdate(AnalyzerStatus.Preparing, "Preparing analysis..."));
+                ReportStatus(AnalyzerStatus.Preparing, "Preparing analysis...");
 
                 // Get all mods except the one we're analyzing (treat as blacklisted)
                 var allMods = loadOrderListingsProvider.Get().ToList();
@@ -100,7 +105,7 @@ public sealed class AnalyzerService(
                     .Select(l => l.ModKey)
                     .ToArray();
 
-                ReportStatus(new StatusUpdate(AnalyzerStatus.Preparing, "Building analyzer..."));
+                ReportStatus(AnalyzerStatus.Preparing, "Building analyzer...");
 
                 // Create analyzer with all built-in analyzers
                 var enabledAnalyzers = analyzers.Where(analyzerFilter.ShouldAnalyze).ToArray();
@@ -108,58 +113,55 @@ public sealed class AnalyzerService(
                     .WithLinkCache(env.LinkCache)
                     .WithAnalyzers(enabledAnalyzers)
                     .WithBlacklistedMods(notSelectedMods)
-                    .WithMinimumSeverity(MinimumSeverity)
+                    .WithMinimumSeverity(minimumSeverity)
                     .WithFileSystem(fileSystem)
                     .Build();
 
                 logger.LogInformation("Built analyzer with {AnalyzerCount} of {TotalAnalyzerCount} analyzers enabled", enabledAnalyzers.Length, analyzers.Count);
 
-                ReportStatus(new StatusUpdate(AnalyzerStatus.Analyzing, "Running analyzers..."));
+                ReportStatus(AnalyzerStatus.Analyzing, "Running analyzers...");
 
                 results = analyzer.Analyze();
 
-                ReportStatus(new StatusUpdate(AnalyzerStatus.Analyzing, "Processing results..."));
+                ReportStatus(AnalyzerStatus.Analyzing, "Processing results...");
             }
             catch (Exception ex)
             {
-                ReportStatus(new StatusUpdate(AnalyzerStatus.Error, $"Analysis failed: {ex.Message}"));
+                ReportStatus(AnalyzerStatus.Error, $"Analysis failed: {ex.Message}");
                 logger.LogError(ex, "Analysis error");
             }
 
             if (results is null)
             {
                 logger.LogWarning("Analysis of {ModKey} produced no runner - aborting", modKey);
-                yield break;
+                return;
             }
 
             var count = 0;
-            await foreach (var result in results)
+            await foreach (var result in results.WithCancellation(cancel))
             {
+                if (cancel.IsCancellationRequested) return;
+
                 count++;
                 if (count % 10 == 0)
                 {
-                    ReportStatus(new StatusUpdate(AnalyzerStatus.Analyzing, $"Found {count} issues..."));
+                    ReportStatus(AnalyzerStatus.Analyzing, $"Found {count} issues...");
                 }
 
-                yield return infoFactory.Create(result, env.LinkCache);
+                observer.OnNext(new AnalysisEvent.Result(infoFactory.Create(result, env.LinkCache)));
             }
 
-            ReportStatus(new StatusUpdate(AnalyzerStatus.Completed, $"Analysis complete - {count} issues found"));
+            ReportStatus(AnalyzerStatus.Completed, $"Analysis complete - {count} issues found");
             logger.LogInformation("Analysis of {ModKey} completed - {IssueCount} issues found in {ElapsedMs}ms", modKey, count, stopwatch.ElapsedMilliseconds);
         }
         finally
         {
-            if (cancellationToken.IsCancellationRequested)
+            if (cancel.IsCancellationRequested)
             {
                 logger.LogInformation("Analysis of {ModKey} was cancelled after {ElapsedMs}ms", modKey, stopwatch.ElapsedMilliseconds);
             }
 
             env?.Dispose();
         }
-    }
-
-    public void ReportStatus(StatusUpdate update)
-    {
-        _statusSubject.OnNext(update);
     }
 }

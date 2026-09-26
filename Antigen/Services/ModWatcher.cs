@@ -1,7 +1,7 @@
 ﻿using System.IO.Abstractions;
-using System.Reactive.Concurrency;
+using System.Reactive;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
-using System.Reactive.Subjects;
 using Antigen.Models.Analyzer;
 using Microsoft.Extensions.Logging;
 using Mutagen.Bethesda.Analyzers.SDK.Topics;
@@ -13,107 +13,49 @@ using ReactiveUI;
 
 namespace Antigen.Services;
 
-public interface IModWatcher : IDisposable
+public interface IModWatcher
 {
-    IObservable<IObservable<AnalyzerResultInfo>> AnalysisCompleted { get; }
-    IObservable<StatusUpdate> StatusUpdates { get; }
-    Severity MinimumSeverity { get; set; }
-    void Start();
-    void Stop();
+    IObservable<IObservable<AnalysisEvent>> Watch(ModKey modKey, IObservable<Severity> minimumSeverity);
 }
 
 public sealed class ModWatcher(
     IFileSystem fileSystem,
     IDataDirectoryProvider dataDirectoryProvider,
-    ModKey modKey,
     IAnalyzerService analyzerService,
     ILogger<ModWatcher> logger)
-    : IModWatcher, ITransient
+    : IModWatcher, IActiveScoped
 {
-    private readonly DisposableBucket _disposables = new();
-    private readonly Subject<IObservable<AnalyzerResultInfo>> _analysisCompleted = new();
-    private readonly string _filePath = fileSystem.Path.Combine(dataDirectoryProvider.Path, modKey.FileName);
-    private readonly IFileSystemWatcher _fileSystemWatcher = fileSystem.FileSystemWatcher.New(dataDirectoryProvider.Path, modKey.FileName);
-    private CancellationTokenSource _cancellationTokenSource = new();
-    private DateTime _lastWriteTime = DateTime.Now;
-    private IDisposable? _subscription;
-    public IObservable<IObservable<AnalyzerResultInfo>> AnalysisCompleted => _analysisCompleted;
-
-    public IObservable<StatusUpdate> StatusUpdates => analyzerService.StatusUpdates;
-
-    public Severity MinimumSeverity
+    public IObservable<IObservable<AnalysisEvent>> Watch(ModKey modKey, IObservable<Severity> minimumSeverity)
     {
-        get => analyzerService.MinimumSeverity;
-        set => analyzerService.MinimumSeverity = value;
-    }
+        var filePath = fileSystem.Path.Combine(dataDirectoryProvider.Path, modKey.FileName);
 
-    public void Start()
-    {
-        // To handle scenarios like MO2 where the change
-        Observable.Interval(TimeSpan.FromSeconds(2))
-            .ObserveOn(RxSchedulers.TaskpoolScheduler)
-            .Subscribe(t =>
+        return Observable.Defer(() =>
             {
-                var currentLastWriteTime = fileSystem.File.GetLastWriteTime(_filePath);
-                if (currentLastWriteTime <= _lastWriteTime) return;
-
-                _lastWriteTime = currentLastWriteTime;
-                _ = OnFileChanged();
+                logger.LogInformation("Started watching {ModKey} at {FilePath}", modKey, filePath);
+                return Observable.Merge(WatcherChanges(modKey), PolledChanges(filePath));
             })
-            .DisposeWith(_disposables);
+            .Throttle(TimeSpan.FromMilliseconds(500), RxSchedulers.TaskpoolScheduler)
+            .Do(_ => logger.LogInformation("Change detected for {ModKey}.  Restarting analysis", modKey))
+            .StartWith(Unit.Default)
+            .CombineLatest(minimumSeverity.DistinctUntilChanged(), (_, severity) => severity)
+            .Select(severity => analyzerService.Analyze(modKey, severity))
+            .Finally(() => logger.LogInformation("Stopped watching {ModKey}", modKey));
+    }
 
-        _subscription = ObservableExtensions.Subscribe(_fileSystemWatcher.Events()
-                .Changed
-                .Throttle(TimeSpan.FromMilliseconds(500), RxSchedulers.TaskpoolScheduler)
-                .ObserveOn(RxSchedulers.TaskpoolScheduler), x => _ = OnFileChanged())
-            .DisposeWith(_disposables);
-
-        _fileSystemWatcher.EnableRaisingEvents = true;
-
-        logger.LogInformation("Started watching {ModKey} at {FilePath}", modKey, _filePath);
-
-        RxSchedulers.TaskpoolScheduler.Schedule(async void () =>
+    private IObservable<Unit> WatcherChanges(ModKey modKey) =>
+        Observable.Create<Unit>(observer =>
         {
-            try
-            {
-                await OnFileChanged();
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error during initial analysis");
-            }
+            var watcher = fileSystem.FileSystemWatcher.New(dataDirectoryProvider.Path, modKey.FileName);
+            var subscription = watcher.Events().Changed.Unit().Subscribe(observer);
+            watcher.EnableRaisingEvents = true;
+            return new CompositeDisposable(subscription, watcher);
         });
-    }
 
-    public void Stop()
-    {
-        _fileSystemWatcher.EnableRaisingEvents = false;
-        _subscription?.Dispose();
-        _cancellationTokenSource.Cancel();
-
-        logger.LogInformation("Stopped watching {ModKey}", modKey);
-    }
-
-    public void Dispose()
-    {
-        Stop();
-        _fileSystemWatcher.Dispose();
-        _disposables.Dispose();
-    }
-
-    private async Task OnFileChanged()
-    {
-        logger.LogInformation("Change detected for {ModKey}.  Restarting analysis", modKey);
-
-        await _cancellationTokenSource.CancelAsync();
-        _cancellationTokenSource.Dispose();
-        _cancellationTokenSource = new CancellationTokenSource();
-
-        var results = analyzerService.AnalyzeAsync(modKey, _cancellationTokenSource.Token)
-            .ToObservable()
-            .Publish()
-            .RefCount();
-
-        _analysisCompleted.OnNext(results);
-    }
+    // Polling fallback for setups like MO2 where watcher events don't fire
+    private IObservable<Unit> PolledChanges(string filePath) =>
+        Observable.Interval(TimeSpan.FromSeconds(2), RxSchedulers.TaskpoolScheduler)
+            .Select(_ => fileSystem.File.GetLastWriteTime(filePath))
+            .DistinctUntilChanged()
+            .Skip(1)
+            .Unit();
 }

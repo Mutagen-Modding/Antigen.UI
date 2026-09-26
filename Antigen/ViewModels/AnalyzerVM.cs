@@ -29,7 +29,6 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
     private DashboardVM? _dashboardVM;
     private AnalyzerResultVM? _configuringResult;
 
-    public ISettingsService SettingsService { get; }
     public ModWatcherVM ModWatcher { get; }
     public ObservableCollectionExtended<Severity> EnabledSeverities { get; } = new(Enum.GetValues<Severity>());
     public ReadOnlyObservableCollection<AnalyzerResultVM> FilteredResults { get; }
@@ -40,7 +39,6 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
         NavigationController navigation,
         HomeVM homeVM,
         Func<AnalyzerVM, SettingsVM> settingsVMFactory,
-        ISettingsService settingsService,
         ModWatcherVM modWatcher,
         Func<AnalyzerVM, DashboardVM> dashboardVMFactory,
         AnalyzerResultVM.Factory resultVMFactory)
@@ -48,15 +46,14 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
         _navigation = navigation;
         _homeVM = homeVM;
         _settingsVMFactory = settingsVMFactory;
-        SettingsService = settingsService;
         ModWatcher = modWatcher;
         _dashboardVMFactory = dashboardVMFactory;
         _resultVMFactory = resultVMFactory;
         IsExpanded = true;
 
         // Transform to vms and apply filters
-        ModWatcher.AllResults
-            .ToObservableChangeSet()
+        ModWatcher.ApplicableResults
+            .Connect()
             .Transform(info =>
             {
                 var vm = _resultVMFactory(info, ModWatcher.IgnoreResult);
@@ -72,18 +69,15 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
 
                         _configuringResult = targetVm;
                     })
-                    .DisposeWith(this);
+                    .DisposeWith(vm);
 
                 return vm;
             })
+            .DisposeMany()
             .Filter(EnabledSeverities.ObserveCollectionChanges()
                 .Unit()
                 .StartWith(Unit.Default)
                 .Select(_ => new Func<AnalyzerResultVM, bool>(result => EnabledSeverities.Contains(result.Result.Topic.Severity))))
-            .Filter(SettingsService.RulesChanged
-                .Unit()
-                .StartWith(Unit.Default)
-                .Select(_ => new Func<AnalyzerResultVM, bool>(result => !SettingsService.IsIgnored(ModWatcher.ModKey, result.Info))))
             .Filter(this.WhenAnyValue(x => x.SearchText)
                 .Unit()
                 .StartWith(Unit.Default)
@@ -98,7 +92,7 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
                 })))
             .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Bind(out var readOnlyObservableCollection)
-            .Subscribe(_ => {})
+            .Subscribe()
             .DisposeWith(this);
 
         FilteredResults = readOnlyObservableCollection;

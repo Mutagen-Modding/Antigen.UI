@@ -1,10 +1,10 @@
-using System.Reactive.Concurrency;
+using System.Reactive;
 using System.Reactive.Linq;
-using Antigen.Extensions;
+using System.Reactive.Subjects;
 using Antigen.Models.Analyzer;
 using Antigen.Models.Settings;
 using Antigen.Services;
-using DynamicData.Binding;
+using DynamicData;
 using Microsoft.Extensions.Logging;
 using Mutagen.Bethesda.Analyzers.SDK.Topics;
 using Mutagen.Bethesda.Plugins;
@@ -16,97 +16,95 @@ namespace Antigen.ViewModels;
 
 public sealed partial class ModWatcherVM : ViewModel, ITransient
 {
-    private readonly IModWatcher _modWatcher;
+    private readonly SourceCache<AnalyzerResultInfo, string> _allResults = new(x => x.GetIdentifier());
+    private readonly Subject<Unit> _runStarted = new();
     private readonly ISettingsService _settingsService;
     private readonly ILogger<ModWatcherVM> _logger;
-
-    private string[] _previousResultHashes = [];
 
     [Reactive] public partial bool IsAnalyzing { get; set; }
     [Reactive] public partial string Status { get; set; }
     [Reactive] public partial AnalyzerStatus AnalyzerStatus { get; set; }
     [Reactive] public partial Severity MinimumSeverity { get; set; } = Severity.None;
-    [Reactive] public partial int TotalResults { get; set; }
-    [Reactive] public partial int NewResultsCount { get; set; }
-    [Reactive] public partial int ResolvedResults { get; set; }
-    [Reactive] public partial ObservableCollectionExtended<AnalyzerResultInfo> AllResults { get; set; }
-    [Reactive] public partial ObservableCollectionExtended<AnalyzerResultInfo> NewResults { get; set; }
+
+    public IObservableCache<AnalyzerResultInfo, string> AllResults => _allResults;
+    public IObservableCache<AnalyzerResultInfo, string> ApplicableResults { get; }
+    public IObservable<Unit> RunStarted => _runStarted;
 
     public ModKey ModKey { get; }
 
     public ModWatcherVM(
         ModKey modKey,
-        Func<ModKey, IModWatcher> modWatcherFactory,
+        IModWatcher modWatcher,
         ISettingsService settingsService,
         ILogger<ModWatcherVM> logger)
     {
         ModKey = modKey;
         _settingsService = settingsService;
         _logger = logger;
-        _modWatcher = modWatcherFactory(modKey)
+        _allResults.DisposeWith(this);
+        _runStarted.DisposeWith(this);
+
+        ApplicableResults = _allResults.Connect()
+            .Filter(settingsService.RulesChanged
+                .Unit()
+                .StartWith(Unit.Default)
+                .Select(_ => new Func<AnalyzerResultInfo, bool>(x => !settingsService.IsIgnored(modKey, x))))
+            .AsObservableCache()
             .DisposeWith(this);
 
         Status = "Initializing...";
         AnalyzerStatus = AnalyzerStatus.Idle;
-        AllResults = [];
-        NewResults = [];
 
-        _modWatcher.AnalysisCompleted
-            .ObserveOn(RxSchedulers.TaskpoolScheduler)
-            .Subscribe(observable =>
-            {
-                RxSchedulers.MainThreadScheduler.Schedule(() =>
-                {
-                    _previousResultHashes = NewResults
-                        .Select(result => result.GetIdentifier())
-                        .ToArray();
-
-                    NewResults.Clear();
-                    AllResults.Clear();
-                });
-
-                observable
-                    .Buffer(TimeSpan.FromMilliseconds(1000), RxSchedulers.TaskpoolScheduler)
-                    .ObserveOn(RxSchedulers.MainThreadScheduler)
-                    .Subscribe(UpdateResults, OnAnalysisFailed, OnAnalysisCompleted);
-            })
-            .DisposeWith(this);
-
-        _modWatcher.StatusUpdates
+        modWatcher.Watch(modKey, this.WhenAnyValue(x => x.MinimumSeverity))
             .ObserveOn(RxSchedulers.MainThreadScheduler)
-            .Subscribe(UpdateStatus)
-            .DisposeWith(this);
-
-        _modWatcher.Start();
-
-        _settingsService.RulesChanged
-            .ObserveOn(RxSchedulers.TaskpoolScheduler)
-            .Select(_ => (AllResults.Count(result => !_settingsService.IsIgnored(ModKey, result)), NewResults.Count(result => !_settingsService.IsIgnored(ModKey, result))))
-            .ObserveOn(RxSchedulers.MainThreadScheduler)
-            .Subscribe(x =>
-            {
-                TotalResults = x.Item1;
-                NewResultsCount = x.Item2;
-            })
+            .Select(ConsumeRun)
+            .Switch()
+            .Subscribe()
             .DisposeWith(this);
 
         Status = $"Watching {modKey.FileName}...";
     }
 
-    private void UpdateResults(IList<AnalyzerResultInfo> incomingResults)
+    private IObservable<Unit> ConsumeRun(IObservable<AnalysisEvent> run)
     {
-        var incomingResultsArray = incomingResults.ToArray();
+        _runStarted.OnNext(Unit.Default);
+        var seen = new HashSet<string>();
+        var failed = false;
 
-        var newIncomingResults = incomingResultsArray
-            .Where(result => !_previousResultHashes.Contains(result.GetIdentifier()))
-            .ToArray();
-        NewResults.AddRangeOptimized(newIncomingResults);
+        return run
+            .Publish(events => Observable.Merge(
+                events.OfType<AnalysisEvent.Status>()
+                    .Select(x => x.Update)
+                    .Do(x => failed |= x.Status == AnalyzerStatus.Error)
+                    .ObserveOn(RxSchedulers.MainThreadScheduler)
+                    .Do(UpdateStatus)
+                    .Unit(),
+                events.OfType<AnalysisEvent.Result>()
+                    .Select(x => x.Info)
+                    .Buffer(TimeSpan.FromMilliseconds(1000), RxSchedulers.TaskpoolScheduler)
+                    .Where(x => x.Count > 0)
+                    .Do(batch =>
+                    {
+                        seen.UnionWith(batch.Select(x => x.GetIdentifier()));
+                        _allResults.AddOrUpdate(batch);
+                    })
+                    .Unit()))
+            .Concat(Observable.Defer(() =>
+            {
+                if (!failed) RemoveUnseen(seen);
+                return Observable.Empty<Unit>();
+            }))
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Catch<Unit, Exception>(ex =>
+            {
+                OnAnalysisFailed(ex);
+                return Observable.Empty<Unit>();
+            });
+    }
 
-        AllResults.InsertRangeOptimized(newIncomingResults, 0);
-        AllResults.AddRangeOptimized(incomingResultsArray.Except(newIncomingResults));
-
-        TotalResults = AllResults.Count(result => !_settingsService.IsIgnored(ModKey, result));
-        NewResultsCount = NewResults.Count(result => !_settingsService.IsIgnored(ModKey, result));
+    private void RemoveUnseen(IReadOnlySet<string> seen)
+    {
+        _allResults.RemoveKeys(_allResults.Keys.Where(key => !seen.Contains(key)).ToArray());
     }
 
     private void OnAnalysisFailed(Exception exception)
@@ -118,26 +116,11 @@ public sealed partial class ModWatcherVM : ViewModel, ITransient
         IsAnalyzing = false;
     }
 
-    private void OnAnalysisCompleted()
-    {
-        ResolvedResults += _previousResultHashes.Length - AllResults.Count + NewResults.Count;
-    }
-
-    [ReactiveCommand]
     private void UpdateStatus(StatusUpdate update)
     {
         AnalyzerStatus = update.Status;
         Status = update.Message ?? Status;
         IsAnalyzing = update.Status is AnalyzerStatus.Analyzing or AnalyzerStatus.Preparing;
-    }
-
-    [ReactiveCommand]
-    private void ChangeMinimumSeverity(Severity severity)
-    {
-        MinimumSeverity = severity;
-
-        // Trigger re-analysis with new severity
-        _modWatcher.Start();
     }
 
     [ReactiveCommand]
