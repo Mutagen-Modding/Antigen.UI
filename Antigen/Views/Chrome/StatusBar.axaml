@@ -61,11 +61,11 @@
                              VerticalAlignment="Center">
                         <Ellipse.Fill>
                             <SolidColorBrush
-                                Color="{Binding !Session.Tally.TotalResults, Converter={StaticResource StateDotColor}}" />
+                                Color="{Binding !Active.Tally.TotalResults, Converter={StaticResource StateDotColor}}" />
                         </Ellipse.Fill>
                     </Ellipse>
 
-                    <TextBlock Text="{Binding Session.Watcher.AnalyzerStatus}"
+                    <TextBlock Text="{Binding Active.Watcher.AnalyzerStatus}"
                                FontSize="13"
                                FontWeight="Bold"
                                VerticalAlignment="Center"
@@ -79,7 +79,7 @@
                                FontSize="12"
                                FontWeight="Medium"
                                Foreground="{DynamicResource TextMutedBrush}" />
-                    <TextBlock Text="{Binding Session.Tally.NewResultsCount}"
+                    <TextBlock Text="{Binding Active.Tally.NewResultsCount}"
                                FontSize="12"
                                FontWeight="Bold"
                                Foreground="{DynamicResource TallyNewBrush}" />
@@ -92,7 +92,7 @@
                                FontSize="12"
                                FontWeight="Medium"
                                Foreground="{DynamicResource TextMutedBrush}" />
-                    <TextBlock Text="{Binding Session.Tally.ResolvedResults}"
+                    <TextBlock Text="{Binding Active.Tally.ResolvedResults}"
                                FontSize="12"
                                FontWeight="Bold"
                                Foreground="{DynamicResource AccentBrush}" />
@@ -105,7 +105,7 @@
                                FontSize="12"
                                FontWeight="Medium"
                                Foreground="{DynamicResource TextMutedBrush}" />
-                    <TextBlock Text="{Binding Session.Tally.TotalResults}"
+                    <TextBlock Text="{Binding Active.Tally.TotalResults}"
                                FontSize="12"
                                FontWeight="Bold"
                                Foreground="{DynamicResource TextPrimaryBrush}" />

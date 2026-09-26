@@ -3,7 +3,6 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:viewModels="clr-namespace:Antigen.ViewModels"
-        xmlns:views="clr-namespace:Antigen.Views"
         xmlns:chrome="clr-namespace:Antigen.Views.Chrome"
         xmlns:analyzerViews="clr-namespace:Antigen.Views.Analyzer"
         xmlns:settingsViews="clr-namespace:Antigen.Views.Settings"
@@ -65,9 +64,6 @@
                     <ContentControl IsVisible="{Binding IsExpanded}"
                                     Content="{Binding ActivePanel}">
                         <ContentControl.DataTemplates>
-                            <DataTemplate DataType="viewModels:HomeVM">
-                                <views:HomeView />
-                            </DataTemplate>
                             <DataTemplate DataType="viewModels:AnalyzerVM">
                                 <analyzerViews:AnalyzerView />
                             </DataTemplate>

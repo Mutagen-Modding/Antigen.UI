@@ -7,14 +7,13 @@ using Antigen.Services;
 using DynamicData;
 using Microsoft.Extensions.Logging;
 using Mutagen.Bethesda.Analyzers.SDK.Topics;
-using Mutagen.Bethesda.Plugins;
 using Noggog;
 using ReactiveUI;
 using ReactiveUI.SourceGenerators;
 
 namespace Antigen.ViewModels;
 
-public sealed partial class ModWatcherVM : ViewModel, ITransient
+public sealed partial class ModWatcherVM : ViewModel, IActiveScoped
 {
     private readonly SourceCache<AnalyzerResultInfo, string> _allResults = new(x => x.GetIdentifier());
     private readonly Subject<Unit> _runStarted = new();
@@ -30,15 +29,11 @@ public sealed partial class ModWatcherVM : ViewModel, ITransient
     public IObservableCache<AnalyzerResultInfo, string> ApplicableResults { get; }
     public IObservable<Unit> RunStarted => _runStarted;
 
-    public ModKey ModKey { get; }
-
     public ModWatcherVM(
-        ModKey modKey,
         IModWatcher modWatcher,
         ISettingsService settingsService,
         ILogger<ModWatcherVM> logger)
     {
-        ModKey = modKey;
         _settingsService = settingsService;
         _logger = logger;
         _allResults.DisposeWith(this);
@@ -48,21 +43,19 @@ public sealed partial class ModWatcherVM : ViewModel, ITransient
             .Filter(settingsService.RulesChanged
                 .Unit()
                 .StartWith(Unit.Default)
-                .Select(_ => new Func<AnalyzerResultInfo, bool>(x => !settingsService.IsIgnored(modKey, x))))
+                .Select(_ => new Func<AnalyzerResultInfo, bool>(x => !settingsService.IsIgnored(x))))
             .AsObservableCache()
             .DisposeWith(this);
 
-        Status = "Initializing...";
+        Status = "Waiting for load order...";
         AnalyzerStatus = AnalyzerStatus.Idle;
 
-        modWatcher.Watch(modKey, this.WhenAnyValue(x => x.MinimumSeverity))
+        modWatcher.Watch(this.WhenAnyValue(x => x.MinimumSeverity))
             .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Select(ConsumeRun)
             .Switch()
             .Subscribe()
             .DisposeWith(this);
-
-        Status = $"Watching {modKey.FileName}...";
     }
 
     private IObservable<Unit> ConsumeRun(IObservable<AnalysisEvent> run)
@@ -109,7 +102,7 @@ public sealed partial class ModWatcherVM : ViewModel, ITransient
 
     private void OnAnalysisFailed(Exception exception)
     {
-        _logger.LogError(exception, "Analysis of {ModKey} failed", ModKey);
+        _logger.LogError(exception, "Analysis failed");
 
         AnalyzerStatus = AnalyzerStatus.Error;
         Status = $"Analysis failed: {exception.Message}";
@@ -126,6 +119,12 @@ public sealed partial class ModWatcherVM : ViewModel, ITransient
     [ReactiveCommand]
     public void IgnoreResult(AnalyzerResultInfo resultInfo, IgnoreType ignoreType)
     {
-        _settingsService.AddRule(ModKey, resultInfo, ignoreType);
+        if (resultInfo.Result.ModKey is not { } modKey)
+        {
+            _logger.LogWarning("Cannot ignore {Identifier}: result has no owning mod", resultInfo.GetIdentifier());
+            return;
+        }
+
+        _settingsService.AddRule(modKey, resultInfo, ignoreType);
     }
 }

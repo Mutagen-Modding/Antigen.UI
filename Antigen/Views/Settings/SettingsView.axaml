@@ -26,7 +26,7 @@
                           StrokeJoin="Round" />
                 </Button>
 
-                <TextBlock Text="{Binding ModKey.FileName, StringFormat='{}Ignore Rules — {0}'}"
+                <TextBlock Text="Ignore Rules"
                            FontSize="16"
                            FontWeight="Bold"
                            VerticalAlignment="Center"
@@ -44,6 +44,9 @@
                       BorderThickness="1"
                       GridLinesVisibility="All">
                 <DataGrid.Columns>
+                    <DataGridTextColumn Header="Mod"
+                                        Binding="{Binding Mod}"
+                                        Width="200" />
                     <DataGridTextColumn Header="Type"
                                         Binding="{Binding Type}"
                                         Width="100" />

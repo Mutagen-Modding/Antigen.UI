@@ -52,7 +52,7 @@
             <StackPanel Grid.Column="0"
                         Margin="12,6,8,6"
                         Spacing="4">
-                <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
                     <!-- Severity -->
                     <TextBlock Grid.Column="0"
                                ToolTip.Tip="{Binding Result.Topic.Severity, Converter={x:Static converter:SeverityConverters.ToDescription}}"
@@ -91,8 +91,16 @@
                             Foreground="{DynamicResource SystemControlForegroundBaseMediumHighBrush}"
                             VerticalAlignment="Center" />
 
+                    <!-- Mod -->
+                    <TextBlock Grid.Column="3"
+                               Text="{Binding ModName}"
+                               Margin="6,0,0,0"
+                               VerticalAlignment="Center"
+                               FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
                     <!-- Metadata -->
-                    <Button Grid.Column="3"
+                    <Button Grid.Column="4"
                             IsVisible="{Binding !!Result.Topic.MetaData.Length}"
                             FontSize="12"
                             Padding="4, 0"

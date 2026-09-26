@@ -12,12 +12,13 @@ namespace Antigen.Services;
 public interface ISettingsService
 {
     IObservable<ImmutableArray<IgnoreRule>> RulesChanged { get; }
+    IReadOnlyList<ModKey> ModsWithRules { get; }
     ImmutableArray<IgnoreRule> GetRules(ModKey modKey);
     void AddRule(ModKey modKey, IgnoreRule rule);
     void AddRule(ModKey modKey, AnalyzerResultInfo resultInfo, IgnoreType ignoreType);
     void RemoveRule(ModKey modKey, int index);
     void ClearRules(ModKey modKey);
-    bool IsIgnored(ModKey modKey, AnalyzerResultInfo resultInfo);
+    bool IsIgnored(AnalyzerResultInfo resultInfo);
 }
 
 public sealed class SettingsService : ISettingsService, ISingleton
@@ -30,6 +31,9 @@ public sealed class SettingsService : ISettingsService, ISingleton
     private readonly string _storageFolder;
 
     public IObservable<ImmutableArray<IgnoreRule>> RulesChanged => _rulesChanged;
+
+    public IReadOnlyList<ModKey> ModsWithRules =>
+        _cache.Where(x => x.Value.Count > 0).Select(x => x.Key).ToArray();
 
     public SettingsService(IFileSystem fileSystem, ILogger<SettingsService> logger)
     {
@@ -45,8 +49,10 @@ public sealed class SettingsService : ISettingsService, ISingleton
         LoadAllRules();
     }
 
-    public bool IsIgnored(ModKey modKey, AnalyzerResultInfo resultInfo)
+    public bool IsIgnored(AnalyzerResultInfo resultInfo)
     {
+        if (resultInfo.Result.ModKey is not { } modKey) return false;
+
         return GetRules(modKey)
             .Any(ignoreRule => GetIdentifier(resultInfo, ignoreRule.Type) == ignoreRule.Identifier);
     }

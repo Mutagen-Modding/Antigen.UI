@@ -27,23 +27,9 @@
               Margin="10">
             <!-- Toolbar -->
             <Grid Grid.Row="0"
-                  ColumnDefinitions="Auto,Auto,4,*,Auto,Auto">
-                <!-- Back Button -->
-                <Button Grid.Column="0"
-                        Theme="{StaticResource IconButton}"
-                        Command="{Binding BackCommand}"
-                        VerticalAlignment="Stretch"
-                        ToolTip.Tip="Back">
-                    <Path Data="M 5,0 L 0,5 L 5,10"
-                          Margin="-6,0,0,0"
-                          Stroke="{Binding $parent[Button].Foreground}"
-                          StrokeThickness="1.5"
-                          StrokeLineCap="Round"
-                          StrokeJoin="Round" />
-                </Button>
-
+                  ColumnDefinitions="Auto,4,*,Auto,Auto">
                 <!-- Filter Severies Flyout -->
-                <Button Grid.Column="1"
+                <Button Grid.Column="0"
                         Theme="{StaticResource IconButton}"
                         VerticalAlignment="Stretch"
                         ToolTip.Tip="Filter Severities">
@@ -84,14 +70,14 @@
                 </Button>
 
                 <!-- Search Bar -->
-                <TextBox Grid.Column="3"
+                <TextBox Grid.Column="2"
                          x:Name="SearchBox"
                          Theme="{StaticResource SearchTextBox}"
                          Text="{Binding SearchText, Delay=200}"
                          PlaceholderText="Search results..." />
 
                 <!-- Ignore Rules Button -->
-                <Button Grid.Column="4"
+                <Button Grid.Column="3"
                         Theme="{StaticResource IconButton}"
                         Command="{Binding OpenSettingsCommand}"
                         VerticalAlignment="Stretch"
@@ -101,7 +87,7 @@
                 </Button>
 
                 <!-- Dashboard Button -->
-                <Button Grid.Column="5"
+                <Button Grid.Column="4"
                         Theme="{StaticResource IconButton}"
                         Command="{Binding OpenDashboardCommand}"
                         VerticalAlignment="Stretch"

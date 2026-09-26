@@ -19,7 +19,6 @@ public sealed partial class SettingsVM : ResizablePanelVM, ITransient
     [Reactive] public partial int SelectedIndex { get; set; } = -1;
 
     public ISettingsService SettingsService { get; }
-    public ModKey ModKey => _analyzerVM.ModWatcher.ModKey;
 
     public SettingsVM(NavigationController navigation, AnalyzerVM analyzerVM, ISettingsService settingsService)
     {
@@ -38,12 +37,15 @@ public sealed partial class SettingsVM : ResizablePanelVM, ITransient
 
     private void LoadRules()
     {
-        var rules = SettingsService.GetRules(ModKey);
         Rules.Clear();
 
-        foreach (var rule in rules)
+        foreach (var modKey in SettingsService.ModsWithRules.OrderBy(key => key.FileName.String, StringComparer.OrdinalIgnoreCase))
         {
-            Rules.Add(new IgnoreRuleItem(rule));
+            var rules = SettingsService.GetRules(modKey);
+            for (var i = 0; i < rules.Length; i++)
+            {
+                Rules.Add(new IgnoreRuleItem(modKey, i, rules[i]));
+            }
         }
     }
 
@@ -58,19 +60,24 @@ public sealed partial class SettingsVM : ResizablePanelVM, ITransient
     {
         if (SelectedIndex < 0 || SelectedIndex >= Rules.Count) return;
 
-        SettingsService.RemoveRule(ModKey, SelectedIndex);
+        var item = Rules[SelectedIndex];
+        SettingsService.RemoveRule(item.ModKey, item.Index);
         SelectedIndex = -1;
     }
 
     [ReactiveCommand]
     private void ClearAll()
     {
-        SettingsService.ClearRules(ModKey);
+        foreach (var modKey in SettingsService.ModsWithRules)
+        {
+            SettingsService.ClearRules(modKey);
+        }
     }
 }
 
-public sealed record IgnoreRuleItem(IgnoreRule Rule)
+public sealed record IgnoreRuleItem(ModKey ModKey, int Index, IgnoreRule Rule)
 {
+    public string Mod => ModKey.FileName;
     public string Type => Rule.Type.ToString();
     public string Identifier => Rule.Identifier;
 }

@@ -25,13 +25,11 @@ public abstract record AnalysisEvent
 
 public interface IAnalyzerService
 {
-    IObservable<AnalysisEvent> Analyze(ModKey modKey, Severity minimumSeverity);
+    IObservable<AnalysisEvent> Analyze(IReadOnlySet<ModKey> targets, Severity minimumSeverity);
 }
 
 public sealed class AnalyzerService(
     IFileSystem fileSystem,
-    IDataDirectoryProvider dataDirectoryProvider,
-    ModInfoProvider modInfoProvider,
     IReadOnlyList<IAnalyzer> analyzers,
     ILoadOrderListingsProvider loadOrderListingsProvider,
     IGameReleaseContext gameReleaseContext,
@@ -39,31 +37,21 @@ public sealed class AnalyzerService(
     IAnalyzerResultInfoFactory infoFactory,
     ILogger<AnalyzerService> logger) : IAnalyzerService, IActiveScoped
 {
-    public IObservable<AnalysisEvent> Analyze(ModKey modKey, Severity minimumSeverity) =>
-        Observable.Create<AnalysisEvent>((observer, cancel) => Run(modKey, minimumSeverity, observer, cancel))
+    public IObservable<AnalysisEvent> Analyze(IReadOnlySet<ModKey> targets, Severity minimumSeverity) =>
+        Observable.Create<AnalysisEvent>((observer, cancel) => Run(targets, minimumSeverity, observer, cancel))
             .SubscribeOn(RxSchedulers.TaskpoolScheduler);
 
-    private async Task Run(ModKey modKey, Severity minimumSeverity, IObserver<AnalysisEvent> observer, CancellationToken cancel)
+    private async Task Run(IReadOnlySet<ModKey> targets, Severity minimumSeverity, IObserver<AnalysisEvent> observer, CancellationToken cancel)
     {
         void ReportStatus(AnalyzerStatus status, string message) =>
             observer.OnNext(new AnalysisEvent.Status(new StatusUpdate(status, message)));
 
         IAsyncEnumerable<AnalyzerResult>? results = null;
 
-        logger.LogInformation("Starting analysis of {ModKey} with minimum severity {MinimumSeverity}", modKey, minimumSeverity);
+        logger.LogInformation("Starting analysis of {TargetCount} mods with minimum severity {MinimumSeverity}", targets.Count, minimumSeverity);
         var stopwatch = Stopwatch.StartNew();
 
-        var modInfos = loadOrderListingsProvider.Get()
-            .Select(l => modInfoProvider.GetModInfo(fileSystem.Path.Combine(dataDirectoryProvider.Path, l.FileName), fileSystem, gameReleaseContext.Release))
-            .WhereNotNull()
-            .ToArray();
-
-        var masterInfos = modInfoProvider.GetMasterInfos(modInfos);
-        var loadOrder = loadOrderListingsProvider.Get()
-            .Where(l => l.ModKey == modKey || masterInfos.TryGetValue(modKey, out var masterInfo) && masterInfo.Masters.Contains(l.ModKey))
-            .ToArray();
-
-        logger.LogInformation("Resolved {LoadOrderCount} of {ModCount} mods", loadOrder.Length, modInfos.Length);
+        var loadOrder = loadOrderListingsProvider.Get().ToArray();
 
         IGameEnvironment? env = null;
         try
@@ -74,7 +62,6 @@ public sealed class AnalyzerService(
             {
                 try
                 {
-                    // Create environment for only the mod and its transitive dependencies
                     env = GameEnvironmentBuilder.Create(gameReleaseContext.Release)
                         .WithLoadOrder(loadOrder)
                         .Build();
@@ -83,14 +70,14 @@ public sealed class AnalyzerService(
                 {
                     // We might get errors to create the environment if a mod file is currently being written to - Retry
                     retryCount++;
-                    logger.LogWarning(ex, "Failed to build game environment for {ModKey} (attempt {Attempt})", modKey, retryCount);
+                    logger.LogWarning(ex, "Failed to build game environment (attempt {Attempt})", retryCount);
                 }
             }
 
             if (env is null)
             {
                 ReportStatus(AnalyzerStatus.Error, "Failed to create game environment");
-                logger.LogError("Giving up building the game environment for {ModKey} after {Attempts} attempts", modKey, retryCount);
+                logger.LogError("Giving up building the game environment after {Attempts} attempts", retryCount);
                 return;
             }
 
@@ -98,11 +85,9 @@ public sealed class AnalyzerService(
             {
                 ReportStatus(AnalyzerStatus.Preparing, "Preparing analysis...");
 
-                // Get all mods except the one we're analyzing (treat as blacklisted)
-                var allMods = loadOrderListingsProvider.Get().ToList();
-                var notSelectedMods = allMods
-                    .Where(l => l.FileName != modKey.FileName)
+                var notSelectedMods = loadOrder
                     .Select(l => l.ModKey)
+                    .Where(key => !targets.Contains(key))
                     .ToArray();
 
                 ReportStatus(AnalyzerStatus.Preparing, "Building analyzer...");
@@ -133,7 +118,7 @@ public sealed class AnalyzerService(
 
             if (results is null)
             {
-                logger.LogWarning("Analysis of {ModKey} produced no runner - aborting", modKey);
+                logger.LogWarning("Analysis produced no runner - aborting");
                 return;
             }
 
@@ -152,13 +137,13 @@ public sealed class AnalyzerService(
             }
 
             ReportStatus(AnalyzerStatus.Completed, $"Analysis complete - {count} issues found");
-            logger.LogInformation("Analysis of {ModKey} completed - {IssueCount} issues found in {ElapsedMs}ms", modKey, count, stopwatch.ElapsedMilliseconds);
+            logger.LogInformation("Analysis completed - {IssueCount} issues found in {ElapsedMs}ms", count, stopwatch.ElapsedMilliseconds);
         }
         finally
         {
             if (cancel.IsCancellationRequested)
             {
-                logger.LogInformation("Analysis of {ModKey} was cancelled after {ElapsedMs}ms", modKey, stopwatch.ElapsedMilliseconds);
+                logger.LogInformation("Analysis was cancelled after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
             }
 
             env?.Dispose();

@@ -8,19 +8,17 @@ using Antigen.ViewModels.Analyzer;
 using DynamicData;
 using DynamicData.Binding;
 using Mutagen.Bethesda.Analyzers.SDK.Topics;
-using Mutagen.Bethesda.Plugins;
 using Noggog;
 using ReactiveUI;
 using ReactiveUI.SourceGenerators;
 
 namespace Antigen.ViewModels;
 
-public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
+public sealed partial class AnalyzerVM : ResizablePanelVM, IActiveScoped
 {
     public static Severity[] SeverityValues { get; } = Enum.GetValues<Severity>();
 
     private readonly NavigationController _navigation;
-    private readonly HomeVM _homeVM;
     private readonly Func<AnalyzerVM, SettingsVM> _settingsVMFactory;
     private readonly Func<AnalyzerVM, DashboardVM> _dashboardVMFactory;
     private readonly AnalyzerResultVM.Factory _resultVMFactory;
@@ -37,14 +35,12 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
 
     public AnalyzerVM(
         NavigationController navigation,
-        HomeVM homeVM,
         Func<AnalyzerVM, SettingsVM> settingsVMFactory,
         ModWatcherVM modWatcher,
         Func<AnalyzerVM, DashboardVM> dashboardVMFactory,
         AnalyzerResultVM.Factory resultVMFactory)
     {
         _navigation = navigation;
-        _homeVM = homeVM;
         _settingsVMFactory = settingsVMFactory;
         ModWatcher = modWatcher;
         _dashboardVMFactory = dashboardVMFactory;
@@ -85,7 +81,8 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
                 {
                     if (string.IsNullOrWhiteSpace(SearchText)) return true;
 
-                    return result.RecordDisplayName?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true ||
+                    return result.ModName?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true ||
+                        result.RecordDisplayName?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true ||
                         result.ParentDisplayName?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true ||
                         result.Result.Topic.TopicDefinition.Title?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true ||
                         result.Result.Topic.FormattedTopic.TopicDefinition.MessageFormat?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true;
@@ -96,12 +93,6 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
             .DisposeWith(this);
 
         FilteredResults = readOnlyObservableCollection;
-    }
-
-    [ReactiveCommand]
-    private void Back()
-    {
-        _navigation.GoTo(_homeVM);
     }
 
     [ReactiveCommand]

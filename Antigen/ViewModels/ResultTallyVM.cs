@@ -7,7 +7,7 @@ using ReactiveUI.SourceGenerators;
 
 namespace Antigen.ViewModels;
 
-public sealed partial class ResultTallyVM : ViewModel, ITransient
+public sealed partial class ResultTallyVM : ViewModel, IActiveScoped
 {
     private readonly ModWatcherVM _watcher;
 
