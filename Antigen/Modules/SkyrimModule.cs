@@ -9,14 +9,9 @@ public sealed class SkyrimModule : GameCategoryModule
 {
     public override GameCategory Category => GameCategory.Skyrim;
 
-    protected override void RegisterFormattedTopicFormatter(ContainerBuilder builder) =>
-        builder.RegisterType<SkyrimFormattedTopicFormatter>().As<IFormattedTopicFormatter>();
-
-    protected override void RegisterAnalyzerResultInfoFactory(ContainerBuilder builder) =>
-        builder.RegisterType<SkyrimAnalyzerResultInfoFactory>().As<IAnalyzerResultInfoFactory>();
-
-    protected override void RegisterAnalyzerFilter(ContainerBuilder builder) =>
-        builder.RegisterType<SkyrimAnalyzerFilter>().As<IAnalyzerFilter>();
+    protected override IReg<IFormattedTopicFormatter> FormattedTopicFormatter => Register<SkyrimFormattedTopicFormatter>();
+    protected override IReg<IAnalyzerResultInfoFactory> AnalyzerResultInfoFactory => Register<SkyrimAnalyzerResultInfoFactory>();
+    protected override IReg<IAnalyzerFilter> AnalyzerFilter => Register<SkyrimAnalyzerFilter>();
 
     protected override void RegisterAnalyzers(ContainerBuilder builder) =>
         builder.RegisterModule<SkyrimAnalyzerModule>();

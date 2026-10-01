@@ -9,26 +9,30 @@ public abstract class GameCategoryModule : Module
 {
     public abstract GameCategory Category { get; }
 
+    protected abstract IReg<IFormattedTopicFormatter> FormattedTopicFormatter { get; }
+    protected abstract IReg<IAnalyzerResultInfoFactory> AnalyzerResultInfoFactory { get; }
+    protected abstract IReg<IAnalyzerFilter> AnalyzerFilter { get; }
+    protected abstract void RegisterAnalyzers(ContainerBuilder builder);
+
     protected override void Load(ContainerBuilder builder)
     {
         base.Load(builder);
 
-        RegisterFormattedTopicFormatter(builder);
-        RegisterAnalyzerResultInfoFactory(builder);
-        RegisterAnalyzerFilter(builder);
+        builder.RegisterType(FormattedTopicFormatter.Type).As<IFormattedTopicFormatter>();
+        builder.RegisterType(AnalyzerResultInfoFactory.Type).As<IAnalyzerResultInfoFactory>();
+        builder.RegisterType(AnalyzerFilter.Type).As<IAnalyzerFilter>();
         RegisterAnalyzers(builder);
     }
 
-    protected virtual void RegisterFormattedTopicFormatter(ContainerBuilder builder) =>
-        builder.RegisterType<FormattedTopicFormatter>().As<IFormattedTopicFormatter>();
+    protected static IReg<T> Register<T>() => new Reg<T>();
 
-    protected virtual void RegisterAnalyzerResultInfoFactory(ContainerBuilder builder) =>
-        builder.RegisterType<AnalyzerResultInfoFactory>().As<IAnalyzerResultInfoFactory>();
-
-    protected virtual void RegisterAnalyzerFilter(ContainerBuilder builder) =>
-        builder.RegisterType<AnalyzerFilter>().As<IAnalyzerFilter>();
-
-    protected virtual void RegisterAnalyzers(ContainerBuilder builder)
+    protected interface IReg<out T>
     {
+        Type Type { get; }
+    }
+
+    private sealed class Reg<T> : IReg<T>
+    {
+        public Type Type => typeof(T);
     }
 }
