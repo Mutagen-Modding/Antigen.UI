@@ -1,0 +1,167 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:profiles="clr-namespace:Antigen.ViewModels.Profiles"
+             xmlns:profileViews="clr-namespace:Antigen.Views.Profiles"
+             xmlns:noggogUi="clr-namespace:Noggog.UI;assembly=Noggog.UI.Avalonia"
+             mc:Ignorable="d"
+             d:DesignWidth="1050"
+             d:DesignHeight="666"
+             x:Class="Antigen.Views.Profiles.ProfilesView"
+             x:DataType="profiles:ProfilesVM"
+             x:Name="Root">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.sectionHeader">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1.5" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.fieldLabel">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="RadioButton.activeProfile">
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Background="Transparent">
+        <Grid RowDefinitions="Auto,*"
+              Margin="15,10,15,12">
+            <StackPanel Grid.Row="0"
+                        Orientation="Horizontal"
+                        Spacing="6">
+                <Button Theme="{StaticResource IconButton}"
+                        Command="{Binding BackCommand}"
+                        ToolTip.Tip="Back">
+                    <Path Data="M 5,0 L 0,5 L 5,10"
+                          Margin="-6,0,0,0"
+                          Stroke="{Binding $parent[Button].Foreground}"
+                          StrokeThickness="1.5"
+                          StrokeLineCap="Round"
+                          StrokeJoin="Round" />
+                </Button>
+
+                <TextBlock Text="Profiles"
+                           FontSize="16"
+                           FontWeight="Bold"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+
+            <Grid Grid.Row="1"
+                  ColumnDefinitions="240,*"
+                  Margin="0,10,0,0">
+                <Grid Grid.Column="0"
+                      RowDefinitions="*,Auto"
+                      Margin="0,0,14,0">
+                    <ListBox Grid.Row="0"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Padding="0"
+                             ItemsSource="{Binding Profiles}"
+                             SelectedItem="{Binding Selected}"
+                             ItemContainerTheme="{StaticResource ListRowItem}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="profiles:ProfileVM">
+                                <StackPanel Orientation="Horizontal"
+                                            Spacing="9">
+                                    <RadioButton Classes="activeProfile"
+                                                 IsChecked="{Binding IsActive, Mode=OneWay}"
+                                                 Command="{Binding #Root.((profiles:ProfilesVM)DataContext).ActivateProfileCommand}"
+                                                 CommandParameter="{Binding}"
+                                                 ToolTip.Tip="Run this profile" />
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <Grid Grid.Row="1"
+                          ColumnDefinitions="*,Auto"
+                          Margin="0,6,0,0">
+                        <profileViews:GameReleasePicker Grid.Column="0"
+                                                        DataContext="{Binding NewTarget}" />
+
+                        <Button Grid.Column="1"
+                                Theme="{StaticResource FieldButton}"
+                                Margin="6,0,0,0"
+                                Padding="12,0"
+                                HorizontalContentAlignment="Center"
+                                IsEnabled="{Binding NewTarget.Release, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                Command="{Binding AddProfileCommand}"
+                                ToolTip.Tip="Add a profile"
+                                Content="+" />
+                    </Grid>
+                </Grid>
+
+                <Panel Grid.Column="1"
+                       IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
+                  <Panel DataContext="{Binding Selected}">
+                    <Grid RowDefinitions="Auto,Auto,Auto,*"
+                          x:DataType="profiles:ProfileVM">
+                        <Grid Grid.Row="0"
+                              ColumnDefinitions="*,Auto">
+                            <TextBox Grid.Column="0"
+                                     VerticalAlignment="Center"
+                                     Text="{Binding Name}"
+                                     PlaceholderText="{Binding DisplayName}" />
+
+                            <Button Grid.Column="1"
+                                    Theme="{StaticResource IconButton}"
+                                    Margin="6,0,0,0"
+                                    Command="{Binding #Root.((profiles:ProfilesVM)DataContext).DeleteProfileCommand}"
+                                    ToolTip.Tip="Delete this profile">
+                                <Path Data="M 4.3,0 H 7.7 V 1.4 H 11.5 V 3 H 0.5 V 1.4 H 4.3 Z
+                                            M 1.7,4.3 H 10.3 L 9.5,13 H 2.5 Z
+                                            M 4.3,5.8 H 5.3 V 11.5 H 4.3 Z
+                                            M 6.7,5.8 H 7.7 V 11.5 H 6.7 Z"
+                                      Fill="{Binding $parent[Button].Foreground}" />
+                            </Button>
+                        </Grid>
+
+                        <StackPanel Grid.Row="1"
+                                    Orientation="Vertical"
+                                    Margin="0,18,0,0"
+                                    Spacing="8">
+                            <TextBlock Classes="sectionHeader" Text="TARGET" />
+
+                            <Grid ColumnDefinitions="90,*"
+                                  Margin="2,2,0,0">
+                                <TextBlock Grid.Column="0" Classes="fieldLabel" Text="Game" />
+                                <TextBlock Grid.Column="1"
+                                           VerticalAlignment="Center"
+                                           Text="{Binding ReleaseName}" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="90,*"
+                                  Margin="2,0,0,0">
+                                <TextBlock Grid.Column="0" Classes="fieldLabel" Text="Data folder" />
+                                <noggogUi:PathPicker Grid.Column="1"
+                                                     Height="30"
+                                                     VerticalAlignment="Center"
+                                                     PickerVM="{Binding DataFolder}"
+                                                     Watermark="{Binding DataFolderNote}" />
+                            </Grid>
+                        </StackPanel>
+
+                        <TextBlock Grid.Row="2"
+                                   Classes="sectionHeader"
+                                   Margin="0,20,0,8"
+                                   Text="PLUGINS" />
+
+                        <profileViews:ProfilePluginsView Grid.Row="3"
+                                                        DataContext="{Binding Plugins}" />
+                    </Grid>
+                  </Panel>
+                </Panel>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

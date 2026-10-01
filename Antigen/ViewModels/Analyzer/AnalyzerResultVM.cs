@@ -1,13 +1,14 @@
 using System.Reactive.Subjects;
 using Antigen.Models.Analyzer;
 using Antigen.Models.Settings;
+using Antigen.Services.Game;
 using Mutagen.Bethesda.Analyzers.Reporting.Handlers;
 using Mutagen.Bethesda.Plugins.Records;
 using ReactiveUI.SourceGenerators;
 
 namespace Antigen.ViewModels.Analyzer;
 
-public partial class AnalyzerResultVM : ViewModel
+public partial class AnalyzerResultVM : ViewModel, ITransient
 {
     private readonly Action<AnalyzerResultInfo, IgnoreType> _ignore;
     private readonly Subject<AnalyzerResultVM> _configureRequested = new();
@@ -19,6 +20,7 @@ public partial class AnalyzerResultVM : ViewModel
     public string? RecordDisplayName => Info.RecordDisplayName;
     public string? ParentDisplayName => Info.ParentDisplayName;
     public IMajorRecordIdentifierGetter? ParentIdentifier => Info.ParentIdentifier;
+    public IReadOnlyList<FormattedTopicSegment> MessageSegments { get; }
 
     /// <summary>
     ///     Whether the inline ignore overlay is covering this row.
@@ -27,10 +29,18 @@ public partial class AnalyzerResultVM : ViewModel
 
     public IObservable<AnalyzerResultVM> ConfigureRequested => _configureRequested;
 
-    public AnalyzerResultVM(AnalyzerResultInfo info, Action<AnalyzerResultInfo, IgnoreType> ignore)
+    public delegate AnalyzerResultVM Factory(
+        AnalyzerResultInfo info,
+        Action<AnalyzerResultInfo, IgnoreType> ignore);
+
+    public AnalyzerResultVM(
+        AnalyzerResultInfo info,
+        IFormattedTopicFormatter topicFormatter,
+        Action<AnalyzerResultInfo, IgnoreType> ignore)
     {
         Info = info;
         _ignore = ignore;
+        MessageSegments = topicFormatter.Format(info.Result.Topic.FormattedTopic);
     }
 
     public string GetIdentifier()

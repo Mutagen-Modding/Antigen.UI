@@ -1,17 +1,18 @@
-using System.IO.Abstractions;
+using System.Collections.ObjectModel;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using Antigen.Services;
+using Antigen.ViewModels.Profiles;
+using DynamicData;
 using Microsoft.Extensions.Logging;
-using Mutagen.Bethesda.Environments.DI;
 using Mutagen.Bethesda.Plugins;
-using Mutagen.Bethesda.Plugins.Order.DI;
 using Noggog;
 using ReactiveUI;
 using ReactiveUI.SourceGenerators;
 
 namespace Antigen.ViewModels;
 
-public sealed partial class HomeVM : ResizablePanelVM, ISingleton
+public sealed partial class HomeVM : ResizablePanelVM, IActiveScoped
 {
     private readonly Subject<ModKey> _startRequested = new();
 
@@ -19,44 +20,40 @@ public sealed partial class HomeVM : ResizablePanelVM, ISingleton
 
     public IObservable<ModKey> StartRequested => _startRequested;
 
-    [Reactive] public partial ModKey[] ModKeys { get; set; } = [];
+    public ReadOnlyObservableCollection<ModKey> FilteredModKeys { get; }
+
     [Reactive] public partial string SearchText { get; set; } = string.Empty;
 
-    [ObservableAsProperty(PropertyName = "FilteredModKeys", InitialValue = "[]")]
-    private IObservable<IEnumerable<ModKey>> FilteredModKeysObservable() =>
-        this.WhenAnyValue(x => x.ModKeys, x => x.SearchText)
-            .Select(t => Filter(t.Item1, t.Item2))
-            .ObserveOn(RxSchedulers.MainThreadScheduler);
+    [Reactive] public partial ErrorResponse State { get; private set; } = ErrorResponse.Success;
 
-    public HomeVM(
-        IFileSystem fileSystem,
-        IDataDirectoryProvider dataDirectoryProvider,
-        ILoadOrderListingsProvider loadOrderListingsProvider,
-        ILogger<HomeVM> logger)
+    public HomeVM(ProfileVM profile, ILogger<HomeVM> logger)
     {
         IsExpanded = true;
         ExpandedHeight = 696.0;
 
-        InitializeOAPH();
+        profile.SelectedLoadOrder
+            .Transform(listing => listing.ModKey)
+            .Filter(this.WhenAnyValue(x => x.SearchText)
+                .Select(search => new Func<ModKey, bool>(key =>
+                    string.IsNullOrWhiteSpace(search)
+                 || key.FileName.String.Contains(search, StringComparison.OrdinalIgnoreCase))))
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Bind(out var filtered)
+            .Subscribe()
+            .DisposeWith(this);
+        FilteredModKeys = filtered;
 
-        Task.Run(() => LoadModKeys(fileSystem, dataDirectoryProvider, loadOrderListingsProvider))
-            .FireAndForget(ex => logger.LogError(ex, "Error loading mod keys"));
-    }
-
-    private static IEnumerable<ModKey> Filter(ModKey[] keys, string search) =>
-        string.IsNullOrWhiteSpace(search)
-            ? keys
-            : keys.Where(m => m.ToString().Contains(search, StringComparison.OrdinalIgnoreCase));
-
-    private void LoadModKeys(
-        IFileSystem fileSystem,
-        IDataDirectoryProvider dataDirectoryProvider,
-        ILoadOrderListingsProvider loadOrderListingsProvider)
-    {
-        ModKeys = loadOrderListingsProvider.Get()
-            .Where(l => fileSystem.File.Exists(fileSystem.Path.Combine(dataDirectoryProvider.Path, l.FileName)))
-            .Select(l => ModKey.FromFileName(l.FileName))
-            .ToArray();
+        profile.LoadOrderState
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Subscribe(state =>
+            {
+                State = state;
+                if (state.Failed)
+                {
+                    logger.LogWarning("Load order unavailable for {Profile}: {Reason}", profile.Name, state.Reason);
+                }
+            })
+            .DisposeWith(this);
     }
 
     [ReactiveCommand]

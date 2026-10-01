@@ -1,0 +1,48 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:profiles="clr-namespace:Antigen.ViewModels.Profiles"
+             xmlns:profileViews="clr-namespace:Antigen.Views.Profiles"
+             mc:Ignorable="d"
+             d:DesignWidth="1050"
+             d:DesignHeight="290"
+             x:Class="Antigen.Views.Profiles.WelcomeView"
+             x:DataType="profiles:WelcomeVM">
+    <Border Background="Transparent">
+        <StackPanel Orientation="Vertical"
+                    Spacing="14"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+            <Ellipse Width="48"
+                     Height="48"
+                     HorizontalAlignment="Center"
+                     Stroke="{DynamicResource AccentBrush}"
+                     StrokeThickness="1.6" />
+
+            <TextBlock Text="Welcome to Antigen"
+                       FontSize="22"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource TextPrimaryBrush}" />
+
+            <TextBlock Text="Point Antigen at a game to start watching for problems."
+                       FontSize="12"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource TextMutedBrush}" />
+
+            <profileViews:GameReleasePicker Width="280"
+                                            Margin="0,8,0,0"
+                                            HorizontalAlignment="Center"
+                                            DataContext="{Binding Target}" />
+
+            <Button Theme="{StaticResource FieldButton}"
+                    Padding="18,9"
+                    HorizontalAlignment="Center"
+                    HorizontalContentAlignment="Center"
+                    IsEnabled="{Binding Target.Release, Converter={x:Static ObjectConverters.IsNotNull}}"
+                    Command="{Binding CreateFirstProfileCommand}"
+                    Content="Set Up First Profile" />
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -1,4 +1,5 @@
 using Antigen.Models.Analyzer;
+using Antigen.Services.Game;
 using Mutagen.Bethesda.Analyzers;
 using Mutagen.Bethesda.Analyzers.Reporting.Handlers;
 using Mutagen.Bethesda.Analyzers.SDK.Analyzers;
@@ -11,7 +12,7 @@ namespace Antigen.ViewModels.Analyzer;
 /// <summary>
 ///     Design-time instance of <see cref="AnalyzerResultVM" /> for XAML designer support.
 /// </summary>
-public sealed class DesignAnalyzerResultVM() : AnalyzerResultVM(CreateDesignData(), static (_, _) => { })
+public sealed class DesignAnalyzerResultVM() : AnalyzerResultVM(CreateDesignData(), new FormattedTopicFormatter(), static (_, _) => { })
 {
     private static AnalyzerResultInfo CreateDesignData()
     {
