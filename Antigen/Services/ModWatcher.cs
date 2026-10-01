@@ -1,11 +1,12 @@
-﻿using System.IO.Abstractions;
-using System.Reactive.Concurrency;
+using System.IO.Abstractions;
+using System.Reactive;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
-using System.Reactive.Subjects;
 using Antigen.Models.Analyzer;
+using Antigen.ViewModels.Profiles;
+using DynamicData;
 using Microsoft.Extensions.Logging;
 using Mutagen.Bethesda.Analyzers.SDK.Topics;
-using Mutagen.Bethesda.Environments.DI;
 using Mutagen.Bethesda.Plugins;
 using Noggog;
 using ReactiveMarbles.ObservableEvents;
@@ -13,107 +14,94 @@ using ReactiveUI;
 
 namespace Antigen.Services;
 
-public interface IModWatcher : IDisposable
+public interface IModWatcher
 {
-    IObservable<IObservable<AnalyzerResultInfo>> AnalysisCompleted { get; }
-    IObservable<StatusUpdate> StatusUpdates { get; }
-    Severity MinimumSeverity { get; set; }
-    void Start();
-    void Stop();
+    IObservable<IObservable<AnalysisEvent>> Watch(IObservable<Severity> minimumSeverity);
 }
 
 public sealed class ModWatcher(
     IFileSystem fileSystem,
-    IDataDirectoryProvider dataDirectoryProvider,
-    ModKey modKey,
+    ProfileVM profile,
     IAnalyzerService analyzerService,
     ILogger<ModWatcher> logger)
-    : IModWatcher, ITransient
+    : IModWatcher, IActiveScoped
 {
-    private readonly DisposableBucket _disposables = new();
-    private readonly Subject<IObservable<AnalyzerResultInfo>> _analysisCompleted = new();
-    private readonly string _filePath = fileSystem.Path.Combine(dataDirectoryProvider.Path, modKey.FileName);
-    private readonly IFileSystemWatcher _fileSystemWatcher = fileSystem.FileSystemWatcher.New(dataDirectoryProvider.Path, modKey.FileName);
-    private CancellationTokenSource _cancellationTokenSource = new();
-    private DateTime _lastWriteTime = DateTime.Now;
-    private IDisposable? _subscription;
-    public IObservable<IObservable<AnalyzerResultInfo>> AnalysisCompleted => _analysisCompleted;
+    private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(500);
 
-    public IObservable<StatusUpdate> StatusUpdates => analyzerService.StatusUpdates;
-
-    public Severity MinimumSeverity
+    public IObservable<IObservable<AnalysisEvent>> Watch(IObservable<Severity> minimumSeverity)
     {
-        get => analyzerService.MinimumSeverity;
-        set => analyzerService.MinimumSeverity = value;
+        var targets = profile.SelectedLoadOrder
+            .ToCollection()
+            .Select(listings => (IReadOnlySet<ModKey>)listings.Select(listing => listing.ModKey).ToHashSet());
+
+        var runs = profile.WhenAnyValue(x => x.DataFolderResult)
+            .DistinctUntilChanged()
+            .Select(result => result.Succeeded
+                ? WatchFolder(result.Value, targets, minimumSeverity)
+                : Observable.Return(Observable.Return<AnalysisEvent>(
+                    new AnalysisEvent.Status(new StatusUpdate(AnalyzerStatus.Idle, $"Data folder unavailable: {result.Reason}")))))
+            .Switch();
+
+        var loadOrderFailures = profile.LoadOrderState
+            .Where(state => state.Failed)
+            .Do(state => logger.LogWarning("Load order unavailable for {Profile}: {Reason}", profile.Name, state.Reason))
+            .Select(state => Observable.Return<AnalysisEvent>(
+                new AnalysisEvent.Status(new StatusUpdate(AnalyzerStatus.Error, $"Load order unavailable: {state.Reason}"))));
+
+        return runs.Merge(loadOrderFailures);
     }
 
-    public void Start()
-    {
-        // To handle scenarios like MO2 where the change
-        Observable.Interval(TimeSpan.FromSeconds(2))
-            .ObserveOn(RxSchedulers.TaskpoolScheduler)
-            .Subscribe(t =>
-            {
-                var currentLastWriteTime = fileSystem.File.GetLastWriteTime(_filePath);
-                if (currentLastWriteTime <= _lastWriteTime) return;
+    private IObservable<IObservable<AnalysisEvent>> WatchFolder(
+        DirectoryPath dataFolder,
+        IObservable<IReadOnlySet<ModKey>> targets,
+        IObservable<Severity> minimumSeverity) =>
+        targets
+            .Throttle(Settle, RxSchedulers.TaskpoolScheduler)
+            .Select(mods => Changes(dataFolder, mods)
+                .Throttle(Settle, RxSchedulers.TaskpoolScheduler)
+                .Do(_ => logger.LogInformation("Change detected.  Restarting analysis of {ModCount} mods", mods.Count))
+                .StartWith(Unit.Default)
+                .Select(_ => mods))
+            .Switch()
+            .CombineLatest(minimumSeverity.DistinctUntilChanged(), analyzerService.Analyze);
 
-                _lastWriteTime = currentLastWriteTime;
-                _ = OnFileChanged();
+    private IObservable<Unit> Changes(DirectoryPath dataFolder, IReadOnlySet<ModKey> targets)
+    {
+        var fileNames = targets
+            .Select(key => key.FileName.String)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return Observable.Defer(() =>
+            {
+                logger.LogInformation("Started watching {ModCount} mods in {DataFolder}", fileNames.Count, dataFolder);
+                return Observable.Merge(WatcherChanges(dataFolder, fileNames), PolledChanges(dataFolder, fileNames));
             })
-            .DisposeWith(_disposables);
+            .Finally(() => logger.LogInformation("Stopped watching {ModCount} mods in {DataFolder}", fileNames.Count, dataFolder));
+    }
 
-        _subscription = ObservableExtensions.Subscribe(_fileSystemWatcher.Events()
-                .Changed
-                .Throttle(TimeSpan.FromMilliseconds(500), RxSchedulers.TaskpoolScheduler)
-                .ObserveOn(RxSchedulers.TaskpoolScheduler), x => _ = OnFileChanged())
-            .DisposeWith(_disposables);
-
-        _fileSystemWatcher.EnableRaisingEvents = true;
-
-        logger.LogInformation("Started watching {ModKey} at {FilePath}", modKey, _filePath);
-
-        RxSchedulers.TaskpoolScheduler.Schedule(async void () =>
+    private IObservable<Unit> WatcherChanges(DirectoryPath dataFolder, IReadOnlySet<string> fileNames) =>
+        Observable.Create<Unit>(observer =>
         {
-            try
-            {
-                await OnFileChanged();
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error during initial analysis");
-            }
+            var watcher = fileSystem.FileSystemWatcher.New(dataFolder.Path);
+            var subscription = watcher.Events().Changed
+                .Where(e => e.Name is { } name && fileNames.Contains(name))
+                .Unit()
+                .Subscribe(observer);
+            watcher.EnableRaisingEvents = true;
+            return new CompositeDisposable(subscription, watcher);
         });
-    }
 
-    public void Stop()
-    {
-        _fileSystemWatcher.EnableRaisingEvents = false;
-        _subscription?.Dispose();
-        _cancellationTokenSource.Cancel();
+    // Polling fallback for setups like MO2 where watcher events don't fire
+    private IObservable<Unit> PolledChanges(DirectoryPath dataFolder, IReadOnlySet<string> fileNames) =>
+        Observable.Interval(TimeSpan.FromSeconds(2), RxSchedulers.TaskpoolScheduler)
+            .Select(_ => LatestWrite(dataFolder, fileNames))
+            .DistinctUntilChanged()
+            .Skip(1)
+            .Unit();
 
-        logger.LogInformation("Stopped watching {ModKey}", modKey);
-    }
-
-    public void Dispose()
-    {
-        Stop();
-        _fileSystemWatcher.Dispose();
-        _disposables.Dispose();
-    }
-
-    private async Task OnFileChanged()
-    {
-        logger.LogInformation("Change detected for {ModKey}.  Restarting analysis", modKey);
-
-        await _cancellationTokenSource.CancelAsync();
-        _cancellationTokenSource.Dispose();
-        _cancellationTokenSource = new CancellationTokenSource();
-
-        var results = analyzerService.AnalyzeAsync(modKey, _cancellationTokenSource.Token)
-            .ToObservable()
-            .Publish()
-            .RefCount();
-
-        _analysisCompleted.OnNext(results);
-    }
+    private DateTime LatestWrite(DirectoryPath dataFolder, IEnumerable<string> fileNames) =>
+        fileNames
+            .Select(fileName => fileSystem.File.GetLastWriteTimeUtc(fileSystem.Path.Combine(dataFolder.Path, fileName)))
+            .DefaultIfEmpty()
+            .Max();
 }

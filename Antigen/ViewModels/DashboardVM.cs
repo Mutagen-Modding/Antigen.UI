@@ -39,6 +39,7 @@ public sealed partial class DashboardVM : ResizablePanelVM, ITransient
     public ObservableCollectionExtended<Grouping<AnalyzerResultVM>> InactiveGroupings { get; } = [];
     public IReadOnlyList<Grouping<AnalyzerResultVM>> AllGroupings { get; } =
     [
+        new("Mod", result => result.ModName ?? string.Empty),
         new("Severity", result => result.Result.Topic.Severity.ToString()),
         new("Topic Title", result => result.Result.Topic.TopicDefinition.Title ?? string.Empty),
         new("Record Type", result => RecordTypeConverters.GetName.Convert(result.Result.Record?.Type, typeof(string), null!, null!) as string ?? string.Empty),
@@ -146,6 +147,7 @@ public sealed partial class DashboardVM : ResizablePanelVM, ITransient
                         })),
                         o => o is GroupNode group ? group.Children : null
                     ),
+                    new TemplateColumn<object>("Mod", CreateTextCellTemplate(GetModText)),
                     new TemplateColumn<object>("Record Type", CreateTextCellTemplate(GetRecordTypeText)),
                     new TemplateColumn<object>("Topic", CreateTextCellTemplate(GetTopicText)),
                     new TemplateColumn<object>("Severity", CreateTextCellTemplate(GetSeverityControl)),
@@ -198,6 +200,11 @@ public sealed partial class DashboardVM : ResizablePanelVM, ITransient
                 VerticalAlignment = VerticalAlignment.Center,
             }
         };
+    }
+
+    private static string? GetModText(AnalyzerResultVM vm)
+    {
+        return vm.ModName;
     }
 
     private static string? GetRecordTypeText(AnalyzerResultVM vm)

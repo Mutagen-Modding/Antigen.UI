@@ -55,14 +55,14 @@ public sealed partial class MainVM : ViewModel, ISingleton
             .Switch()
             .StartWith(false);
 
-    [ObservableAsProperty(PropertyName = "Session")]
-    private IObservable<SessionVM?> SessionObservable() =>
-        _activeProfile.WhenAnyFallback(x => x.Active!.Session);
+    [ObservableAsProperty(PropertyName = "Active")]
+    private IObservable<ActiveProfileVM?> ActiveObservable() =>
+        _activeProfile.WhenAnyValue(x => x.Active);
 
     [ObservableAsProperty(PropertyName = "ShowStatusBar")]
     private IObservable<bool> ShowStatusBarObservable() =>
-        this.WhenAnyValue(x => x.Session)
-            .Select(session => session is not null)
+        this.WhenAnyValue(x => x.Active)
+            .Select(active => active is not null)
             .StartWith(false);
 
     [ObservableAsProperty(PropertyName = "StatusBarDock")]

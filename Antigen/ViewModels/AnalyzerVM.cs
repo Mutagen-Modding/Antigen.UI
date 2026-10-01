@@ -8,19 +8,17 @@ using Antigen.ViewModels.Analyzer;
 using DynamicData;
 using DynamicData.Binding;
 using Mutagen.Bethesda.Analyzers.SDK.Topics;
-using Mutagen.Bethesda.Plugins;
 using Noggog;
 using ReactiveUI;
 using ReactiveUI.SourceGenerators;
 
 namespace Antigen.ViewModels;
 
-public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
+public sealed partial class AnalyzerVM : ResizablePanelVM, IActiveScoped
 {
     public static Severity[] SeverityValues { get; } = Enum.GetValues<Severity>();
 
     private readonly NavigationController _navigation;
-    private readonly HomeVM _homeVM;
     private readonly Func<AnalyzerVM, SettingsVM> _settingsVMFactory;
     private readonly Func<AnalyzerVM, DashboardVM> _dashboardVMFactory;
     private readonly AnalyzerResultVM.Factory _resultVMFactory;
@@ -29,7 +27,6 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
     private DashboardVM? _dashboardVM;
     private AnalyzerResultVM? _configuringResult;
 
-    public ISettingsService SettingsService { get; }
     public ModWatcherVM ModWatcher { get; }
     public ObservableCollectionExtended<Severity> EnabledSeverities { get; } = new(Enum.GetValues<Severity>());
     public ReadOnlyObservableCollection<AnalyzerResultVM> FilteredResults { get; }
@@ -38,25 +35,21 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
 
     public AnalyzerVM(
         NavigationController navigation,
-        HomeVM homeVM,
         Func<AnalyzerVM, SettingsVM> settingsVMFactory,
-        ISettingsService settingsService,
         ModWatcherVM modWatcher,
         Func<AnalyzerVM, DashboardVM> dashboardVMFactory,
         AnalyzerResultVM.Factory resultVMFactory)
     {
         _navigation = navigation;
-        _homeVM = homeVM;
         _settingsVMFactory = settingsVMFactory;
-        SettingsService = settingsService;
         ModWatcher = modWatcher;
         _dashboardVMFactory = dashboardVMFactory;
         _resultVMFactory = resultVMFactory;
         IsExpanded = true;
 
         // Transform to vms and apply filters
-        ModWatcher.AllResults
-            .ToObservableChangeSet()
+        ModWatcher.ApplicableResults
+            .Connect()
             .Transform(info =>
             {
                 var vm = _resultVMFactory(info, ModWatcher.IgnoreResult);
@@ -72,18 +65,15 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
 
                         _configuringResult = targetVm;
                     })
-                    .DisposeWith(this);
+                    .DisposeWith(vm);
 
                 return vm;
             })
+            .DisposeMany()
             .Filter(EnabledSeverities.ObserveCollectionChanges()
                 .Unit()
                 .StartWith(Unit.Default)
                 .Select(_ => new Func<AnalyzerResultVM, bool>(result => EnabledSeverities.Contains(result.Result.Topic.Severity))))
-            .Filter(SettingsService.RulesChanged
-                .Unit()
-                .StartWith(Unit.Default)
-                .Select(_ => new Func<AnalyzerResultVM, bool>(result => !SettingsService.IsIgnored(ModWatcher.ModKey, result.Info))))
             .Filter(this.WhenAnyValue(x => x.SearchText)
                 .Unit()
                 .StartWith(Unit.Default)
@@ -91,23 +81,18 @@ public sealed partial class AnalyzerVM : ResizablePanelVM, ITransient
                 {
                     if (string.IsNullOrWhiteSpace(SearchText)) return true;
 
-                    return result.RecordDisplayName?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true ||
+                    return result.ModName?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true ||
+                        result.RecordDisplayName?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true ||
                         result.ParentDisplayName?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true ||
                         result.Result.Topic.TopicDefinition.Title?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true ||
                         result.Result.Topic.FormattedTopic.TopicDefinition.MessageFormat?.Contains(SearchText, StringComparison.OrdinalIgnoreCase) == true;
                 })))
             .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Bind(out var readOnlyObservableCollection)
-            .Subscribe(_ => {})
+            .Subscribe()
             .DisposeWith(this);
 
         FilteredResults = readOnlyObservableCollection;
-    }
-
-    [ReactiveCommand]
-    private void Back()
-    {
-        _navigation.GoTo(_homeVM);
     }
 
     [ReactiveCommand]

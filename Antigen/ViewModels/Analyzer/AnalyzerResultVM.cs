@@ -20,6 +20,7 @@ public partial class AnalyzerResultVM : ViewModel, ITransient
     public string? RecordDisplayName => Info.RecordDisplayName;
     public string? ParentDisplayName => Info.ParentDisplayName;
     public IMajorRecordIdentifierGetter? ParentIdentifier => Info.ParentIdentifier;
+    public string? ModName => Info.Result.ModKey?.FileName.String;
     public IReadOnlyList<FormattedTopicSegment> MessageSegments { get; }
 
     /// <summary>

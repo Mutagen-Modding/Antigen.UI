@@ -65,5 +65,5 @@ public sealed partial class NavigationController : ReactiveObject, ISingleton
 
     private static bool BelongsToProfile(ResizablePanelVM? panel) => panel is not (null or ISingleton);
 
-    private ResizablePanelVM Fallback => _activeProfile.Active?.Home ?? (ResizablePanelVM)_welcome.Value;
+    private ResizablePanelVM Fallback => _activeProfile.Active?.Analyzer ?? (ResizablePanelVM)_welcome.Value;
 }
