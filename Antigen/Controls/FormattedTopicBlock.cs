@@ -11,7 +11,7 @@ using ReactiveUI;
 namespace Antigen.Controls;
 
 /// <summary>
-///     Renders a topic message, with each placeholder value shown as a click-to-copy button.
+///     Renders a topic message on a single trimmed line, with each placeholder value shown as a click-to-copy button.
 /// </summary>
 public sealed class FormattedTopicBlock : TextBlock
 {
@@ -27,7 +27,7 @@ public sealed class FormattedTopicBlock : TextBlock
     public FormattedTopicBlock()
     {
         VerticalAlignment = VerticalAlignment.Center;
-        TextWrapping = TextWrapping.Wrap;
+        TextTrimming = TextTrimming.CharacterEllipsis;
         FontSize = 12;
         Foreground = StandardBrushes.DarkGrayBrush;
     }
@@ -46,6 +46,7 @@ public sealed class FormattedTopicBlock : TextBlock
     {
         var inlines = Inlines ??= new InlineCollection();
         inlines.Clear();
+        ToolTip.SetTip(this, Segments is null ? null : string.Concat(Segments.Select(x => x.Text)));
 
         if (Segments is null) return;
 
